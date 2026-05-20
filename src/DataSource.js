@@ -108,6 +108,10 @@ class DataSource {
 	}
 
 	async getData(url, type, showErrors = true) {
+		if(!this.isValidHttpUrl(url)) {
+			throw new Error("Invalid url: " + url);
+		}
+
 		// For testing, all urls must be stubbed
 		if(Object.keys(this.#fetchDataOverrides).length > 0) {
 			if(this.#fetchDataOverrides[url]) {

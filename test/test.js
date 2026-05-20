@@ -32,7 +32,7 @@ test("YouTube user", async (t) => {
 
 	let [post] = entries;
 
-	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "dateUpdated", "filePath", "title", "type", "url", "uuid"]);
+	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "dateUpdated", "filePath", "outputContentType", "title", "type", "url", "uuid"]);
 	assert.equal(post.content.length, 812);
 	assert.equal(post.content, `CloudCannon is the Recommended CMS Partner of 11ty:
 
@@ -65,7 +65,7 @@ test("Bluesky posts", async (t) => {
 
 	let [post] = entries;
 
-	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "filePath", "title", "type", "url", "uuid"]);
+	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "filePath", "outputContentType", "title", "type", "url", "uuid"]);
 	assert.equal(post.content.length, 323);
 	assert.equal(post.content, `time to review my HTML wrapped 2024
 
@@ -108,7 +108,7 @@ test("WordPress import", async (t) => {
 	assert.equal(entries.length, 1);
 
 	let [post] = entries;
-	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "dateUpdated", "filePath", "metadata", "status", "title", "type", "url", "uuid"]);
+	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "dateUpdated", "filePath", "metadata", "outputContentType", "status", "title", "type", "url", "uuid"]);
 
 	assert.equal(cleanContent(post.content), `We’re so close to launching version 6, and we figured it was high time to make an official announcement. So, save the date for February. Font Awesome 6 will go beyond pure icon-imagination!
 

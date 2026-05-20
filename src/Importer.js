@@ -24,7 +24,7 @@ import { FediverseUser } from "./DataSource/FediverseUser.js";
 import pkg from "../package.json" with { type: "json" };
 
 // For testing
-const MAX_IMPORT_SIZE = 0;
+const MAX_IMPORT_SIZE_DEFAULT = 0;
 
 class Importer {
 	#draftsFolder = "drafts";
@@ -245,13 +245,13 @@ class Importer {
 	}
 
 	static isText(entry) {
-		return entry.contentType === "text";
+		return (entry.importContentType || entry.contentType) === "text";
 	}
 
 	static isHtml(entry) {
 		// TODO add a CLI override for --importContentType?
 		// TODO add another path to guess if content is HTML https://mimesniff.spec.whatwg.org/#identifying-a-resource-with-an-unknown-mime-type
-		return entry.contentType === "html";
+		return (entry.importContentType || entry.contentType) === "html";
 	}
 
 	async fetchRelatedMedia(cleanEntry) {
@@ -322,7 +322,10 @@ class Importer {
 	}
 
 	async getEntries(options = {}) {
-		let isWritingToMarkdown = options.contentType === "markdown";
+		// alias to better name (but keep backwards compat)
+		let outputContentTypeOverride = options.outputContentType || options.contentType;
+
+		let maxLimit = options.limit ?? MAX_IMPORT_SIZE_DEFAULT;
 
 		for(let source of this.sources) {
 			source.setWithin(options.within);
@@ -331,12 +334,20 @@ class Importer {
 		let entries = [];
 		for(let source of this.sources) {
 			for(let entry of await source.getEntries()) {
-				let contentType = entry.contentType;
-				if(Importer.shouldUseMarkdownFileExtension(entry) && isWritingToMarkdown) {
-					contentType = "markdown";
+				let filePathContentType;
+				if(options.importContentType) {
+					entry.importContentType = options.importContentType;
+				}
+				if(outputContentTypeOverride) {
+					entry.outputContentType = outputContentTypeOverride;
 				}
 
-				entry.filePath = this.getFilePath(entry, contentType);
+				// change output to Markdown
+				if(Importer.shouldUseMarkdownFileExtension(entry) && outputContentTypeOverride === "markdown") {
+					filePathContentType = "markdown";
+				}
+
+				entry.filePath = this.getFilePath(entry, filePathContentType);
 
 				// to prevent fetching assets and transforming contents on entries that won’t get written
 				if(options.target === "fs" && this.shouldSkipEntry(entry)) {
@@ -347,17 +358,15 @@ class Importer {
 			}
 		}
 
-		// purely for internals testing
-		if(MAX_IMPORT_SIZE) {
-			entries = entries.slice(0, MAX_IMPORT_SIZE);
+		if(maxLimit) {
+			entries = entries.slice(0, maxLimit);
 		}
 
 		let promises = await Promise.allSettled(entries.map(async entry => {
 			await this.fetchRelatedMedia(entry);
+			entry.content = await this.getTransformedContent(entry, outputContentTypeOverride === "markdown");
 
-			entry.content = await this.getTransformedContent(entry, isWritingToMarkdown);
-
-			if(isWritingToMarkdown && Importer.shouldConvertToMarkdown(entry)) {
+			if(outputContentTypeOverride === "markdown" && Importer.shouldConvertToMarkdown(entry)) {
 				entry.contentType = "markdown";
 			}
 
