@@ -1,6 +1,6 @@
 import { DataSource } from "../DataSource.js";
 
-class YouTubeUser extends DataSource {
+export class YouTubeUser extends DataSource {
 	static TYPE = "youtube";
 	static TYPE_FRIENDLY = "YouTube";
 
@@ -59,5 +59,3 @@ class YouTubeUser extends DataSource {
 		}
 	}
 }
-
-export {YouTubeUser};

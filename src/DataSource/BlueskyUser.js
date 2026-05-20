@@ -1,7 +1,7 @@
 import path from "node:path";
 import { Rss } from "./Rss.js";
 
-class BlueskyUser extends Rss {
+export class BlueskyUser extends Rss {
 	static TYPE = "bluesky";
 	static TYPE_FRIENDLY = "Bluesky";
 
@@ -30,5 +30,3 @@ class BlueskyUser extends Rss {
 		return obj;
 	}
 }
-
-export { BlueskyUser };

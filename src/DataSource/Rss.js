@@ -1,6 +1,6 @@
 import { DataSource } from "../DataSource.js";
 
-class Rss extends DataSource {
+export class Rss extends DataSource {
 	static TYPE = "rss";
 	static TYPE_FRIENDLY = "RSS";
 
@@ -101,5 +101,3 @@ class Rss extends DataSource {
 		}
 	}
 }
-
-export {Rss};

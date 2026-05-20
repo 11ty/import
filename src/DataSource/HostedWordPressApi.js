@@ -1,6 +1,6 @@
 import { DataSource } from "../DataSource.js";
 
-class HostedWordPressApi extends DataSource {
+export class HostedWordPressApi extends DataSource {
 	static TYPE = "wordpressapi-hosted";
 	static TYPE_FRIENDLY = "WordPress.com";
 
@@ -102,5 +102,3 @@ class HostedWordPressApi extends DataSource {
 		}
 	}
 }
-
-export { HostedWordPressApi };

@@ -1,6 +1,6 @@
 import { DataSource } from "../DataSource.js";
 
-class Atom extends DataSource {
+export class Atom extends DataSource {
 	static TYPE = "atom";
 	static TYPE_FRIENDLY = "Atom";
 
@@ -76,5 +76,3 @@ class Atom extends DataSource {
 		}
 	}
 }
-
-export {Atom};

@@ -4,7 +4,7 @@ import { DateCompare } from "@11ty/eleventy-utils";
 import { DataSource } from "../DataSource.js";
 import { HostedWordPressApi } from "./HostedWordPressApi.js"
 
-class WordPressApi extends DataSource {
+export class WordPressApi extends DataSource {
 	static TYPE = "wordpress";
 	static TYPE_FRIENDLY = "WordPress";
 	static IGNORED_CATEGORIES = ["Uncategorized"];
@@ -205,5 +205,3 @@ class WordPressApi extends DataSource {
 		return cleanEntry;
 	}
 }
-
-export { WordPressApi };

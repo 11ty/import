@@ -1,8 +1,7 @@
 import path from "node:path";
-import { DataSource } from "../DataSource.js";
 import { Rss } from "./Rss.js";
 
-class FediverseUser extends Rss {
+export class FediverseUser extends Rss {
 	static TYPE = "fediverse";
 	static TYPE_FRIENDLY = "Fediverse";
 
@@ -51,5 +50,3 @@ class FediverseUser extends Rss {
 		return obj;
 	}
 }
-
-export { FediverseUser };
