@@ -150,8 +150,12 @@ importer.addPreserved(".save-this-class-name");
 importer.setOverwriteAllow("drafts");
 
 let entries = await importer.getEntries({
-	contentType: "markdown", // --format
 	within: "*", // date or last updated date must be within this recent duration (e.g. 24h, 7d, 1y)
+
+	// v1.0.20 and newer:
+	limit: 0, // limit number of entires (happens before asset import and processing)
+	outputContentType: "markdown", // --format (use `contentType` prior to v1.0.20)
+	inputContentType: undefined, // this overrides content type detection to determine eligibility for markdown output (one of: "html", "text")
 });
 
 await importer.toFiles(entries);
