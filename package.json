@@ -28,9 +28,9 @@
 	"author": "Zach Leatherman <zachleatherman@gmail.com> (https://zachleat.com/)",
 	"repository": {
 		"type": "git",
-		"url": "git://github.com/11ty/eleventy-import.git"
+		"url": "git://github.com/11ty/import.git"
 	},
-	"bugs": "https://github.com/11ty/eleventy-import/issues",
+	"bugs": "https://github.com/11ty/import/issues",
 	"homepage": "https://www.11ty.dev/",
 	"license": "MIT",
 	"dependencies": {
