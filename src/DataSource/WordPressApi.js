@@ -23,7 +23,7 @@ export class WordPressApi extends DataSource {
 		if(e?.cause instanceof Response) {
 			// Upstream out of band request is returning HTML!
 			if(e.cause?.status === 400) {
-				if(await e.cause.text().trim().startsWith("<!DOCTYPE ")) {
+				if((await e.cause.text() || "").trim().startsWith("<!DOCTYPE ")) {
 					return false;
 				}
 			}
