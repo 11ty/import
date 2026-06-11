@@ -16,7 +16,7 @@ jobs:
           node-version: "22"
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
-      - run: npm install -g npm@11.11
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm test
       - if: ${{ github.event.release.tag_name != '' && env.NPM_PUBLISH_TAG != '' }}
