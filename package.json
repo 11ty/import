@@ -1,6 +1,6 @@
 {
 	"name": "@11ty/import",
-	"version": "1.0.21",
+	"version": "1.0.22",
 	"description": "Utility to import content from multiple services (and a CLI, too)",
 	"type": "module",
 	"main": "./src/Importer.js",
