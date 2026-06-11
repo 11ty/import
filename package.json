@@ -11,9 +11,7 @@
 	"engines": {
 		"node": ">=18"
 	},
-	"bin": {
-		"eleventy-import": "cli.js"
-	},
+	"bin": "cli.js",
 	"scripts": {
 		"test": "node --test",
 		"prepare": "husky"
