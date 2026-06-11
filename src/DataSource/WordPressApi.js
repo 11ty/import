@@ -21,6 +21,13 @@ export class WordPressApi extends DataSource {
 	// some pagination errors just mean there are no more pages
 	async isErrorWorthWorryingAbout(e) {
 		if(e?.cause instanceof Response) {
+			// Upstream out of band request is returning HTML!
+			if(e.cause?.status === 400) {
+				if(await e.cause.text().trim().startsWith("<!DOCTYPE ")) {
+					return false;
+				}
+			}
+
 			let errorData = await e.cause.json();
 			if(errorData?.code === "rest_post_invalid_page_number") {
 				return false;
