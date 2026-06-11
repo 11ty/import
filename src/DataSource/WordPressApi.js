@@ -33,7 +33,7 @@ export class WordPressApi extends DataSource {
 				}
 			}
 
-			if(responseText.startsWith("[")) {
+			if(responseText.startsWith("[") || responseText.startsWith("{")) {
 				try {
 					let errorData = JSON.parse(responseText);
 					if(errorData?.code === "rest_post_invalid_page_number") {
