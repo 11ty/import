@@ -20,17 +20,28 @@ export class WordPressApi extends DataSource {
 
 	// some pagination errors just mean there are no more pages
 	async isErrorWorthWorryingAbout(e) {
+		let responseText;
 		if(e?.cause instanceof Response) {
-			// Upstream out of band request is returning HTML!
+			responseText = (await e.cause.text() || "").trim();
+		}
+
+		// Upstream out of band request is returning HTML!
+		if(responseText) {
 			if(e.cause?.status === 400) {
-				if((await e.cause.text() || "").trim().startsWith("<!DOCTYPE ")) {
+				if(responseText.startsWith("<!DOCTYPE ")) {
 					return false;
 				}
 			}
 
-			let errorData = await e.cause.json();
-			if(errorData?.code === "rest_post_invalid_page_number") {
-				return false;
+			if(responseText.startsWith("[")) {
+				try {
+					let errorData = JSON.parse(responseText);
+					if(errorData?.code === "rest_post_invalid_page_number") {
+						return false;
+					}
+				} catch(e) {
+					// do nothing here: error is worth worrying about
+				}
 			}
 		}
 

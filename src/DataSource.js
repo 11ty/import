@@ -114,8 +114,13 @@ class DataSource {
 
 		// For testing, all urls must be stubbed
 		if(Object.keys(this.#fetchDataOverrides).length > 0) {
-			if(this.#fetchDataOverrides[url]) {
-				return this.#fetchDataOverrides[url];
+			let override = this.#fetchDataOverrides[url];
+			if(override) {
+				if(override instanceof Error) {
+					throw override;
+				}
+
+				return override;
 			}
 
 			throw new Error("Testing error, missing data override url: " + url);
