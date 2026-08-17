@@ -1,6 +1,6 @@
 # `@11ty/import`
 
-A small utility (and CLI) to import content files from various content sources. Requires Node 18 or newer.
+A small utility (and CLI) to import content files from various content sources. Requires Node 20.19 or newer.
 
 ## Features
 

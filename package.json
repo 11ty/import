@@ -9,7 +9,7 @@
 		"./DataSource": "./src/DataSource.js"
 	},
 	"engines": {
-		"node": ">=18"
+		"node": ">=20.19"
 	},
 	"bin": "cli.js",
 	"scripts": {
