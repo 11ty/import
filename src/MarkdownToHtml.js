@@ -226,6 +226,23 @@ class MarkdownToHtml {
 
 		ts.keep(TAGS_TO_KEEP); // tags run through `keepReplacement` function if match
 
+		// A markdown code span can only hold literal text, so any code containing markup is kept
+		// as HTML e.g. <code><a href="…">&lt;wa-time-input&gt;</a></code>
+		// https://github.com/11ty/import/issues/48
+		ts.addRule("keep-code-as-html", {
+			filter: (node) => {
+				// <code> inside of <pre> is a code block, handled below
+				if(node.localName !== "code" || node.parentNode?.localName === "pre") {
+					return false;
+				}
+
+				return Boolean(node.firstElementChild);
+			},
+			replacement: (content, node) => {
+				return node.outerHTML;
+			}
+		});
+
 		if(this.preservedSelectors.size > 0) {
 			let preserved = Array.from(this.preservedSelectors);
 			ts.addRule("keep-via-classes", {
