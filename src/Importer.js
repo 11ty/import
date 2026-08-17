@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
-import yaml from "js-yaml";
+import { dump } from 'js-yaml'
 import kleur from "kleur";
 import slugify from '@sindresorhus/slugify';
 import * as entities from "entities";
@@ -473,7 +473,7 @@ class Importer {
 		}
 
 		// https://www.npmjs.com/package/js-yaml#dump-object---options-
-		let frontMatter = yaml.dump(data, {
+		let frontMatter = dump(data, {
 			// sortKeys: true,
 			noCompatMode: true,
 		});
