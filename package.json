@@ -38,7 +38,7 @@
 		"@prettier/sync": "^0.6.1",
 		"@sindresorhus/slugify": "^2.2.1",
 		"dotenv": "^17.4.2",
-		"entities": "^7.0.1",
+		"entities": "^8.0.0",
 		"fast-xml-parser": "^5.9.3",
 		"filesize": "^10.1.6",
 		"github-publish": "^6.0.0",
