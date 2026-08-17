@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
-import TurndownService from "turndown";
+import TurndownService from "@zachleat/turndown";
 import * as prettier from "prettier";
 import prettierSync from "@prettier/sync";
 import striptags from "striptags";
