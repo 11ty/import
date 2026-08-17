@@ -40,7 +40,7 @@
 		"dotenv": "^17.4.2",
 		"entities": "^8.0.0",
 		"fast-xml-parser": "^5.9.3",
-		"filesize": "^10.1.6",
+		"filesize": "^11.0.22",
 		"github-publish": "^6.0.0",
 		"js-yaml": "^4.2.0",
 		"kleur": "^4.1.5",
