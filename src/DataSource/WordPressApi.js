@@ -14,7 +14,9 @@ try {
 export class WordPressApi extends DataSource {
 	static TYPE = "wordpress";
 	static TYPE_FRIENDLY = "WordPress";
+	// Fallback when the default category isn’t available from settings (requires auth)
 	static IGNORED_CATEGORIES = ["Uncategorized"];
+	static DEFAULT_CATEGORY_ID = 1;
 	static DEFAULT_POST_TYPES = ["posts", "pages"];
 	static BUILTIN_REST_BASES = ["posts", "pages"];
 	static WORDPRESSDOTCOM_API = "https://public-api.wordpress.com/wp/v2/sites/";
@@ -23,6 +25,7 @@ export class WordPressApi extends DataSource {
 	#restBase = "posts";
 	#apiRoot;
 	#types;
+	#defaultCategoryId;
 
 	constructor(url) {
 		super();
@@ -83,7 +86,7 @@ export class WordPressApi extends DataSource {
 		throw new Error(`Could not find a WordPress REST API for ${this.url}`);
 	}
 
-	#canRequestDrafts() {
+	#hasCredentials() {
 		if(this.#apiRoot?.isWordPressDotCom) {
 			return Boolean(process.env.WORDPRESSDOTCOM_TOKEN);
 		}
@@ -126,8 +129,28 @@ export class WordPressApi extends DataSource {
 		return Array.from(new Set(restBases));
 	}
 
+	// Posts without a category are assigned the default (e.g. “Uncategorized”)
+	async #fetchDefaultCategoryId() {
+		this.#defaultCategoryId = WordPressApi.DEFAULT_CATEGORY_ID;
+		if(!this.#hasCredentials()) {
+			return;
+		}
+
+		let url = this.#getSubtypeUrl("settings");
+		try {
+			let settings = await this.getData(url, this.getType(), false);
+			if(settings?.default_category) {
+				this.#defaultCategoryId = settings.default_category;
+			}
+		} catch(e) {
+			// Requires a user that can manage options
+			this.fetcher.clearError(url);
+		}
+	}
+
 	async getEntries() {
 		await this.#discoverApiRoot();
+		await this.#fetchDefaultCategoryId();
 
 		let entries = [];
 		for(let restBase of this.#getRestBases()) {
@@ -210,13 +233,13 @@ export class WordPressApi extends DataSource {
 
 			let statusStr = "";
 			// Only request Drafts if auth’d
-			if(this.#canRequestDrafts()) {
+			if(this.#hasCredentials()) {
 				// Commas are encoded
 				statusStr = `&status=${encodeURIComponent("publish,draft")}`;
 			}
 
-			// Embeds featured media (for sites without Jetpack) and authors (the WordPress.com users endpoint requires auth)
-			return this.#getSubtypeUrl(this.#restBase, "", `page=${pageNumber}&per_page=100&_embed=${encodeURIComponent("author,wp:featuredmedia")}${statusStr}${withinStr}`);
+			// Embeds featured media (for sites without Jetpack), authors (the WordPress.com users endpoint requires auth), and terms (avoids a request per term)
+			return this.#getSubtypeUrl(this.#restBase, "", `page=${pageNumber}&per_page=100&_embed=${encodeURIComponent("author,wp:featuredmedia,wp:term")}${statusStr}${withinStr}`);
 		};
 	}
 
@@ -288,26 +311,30 @@ export class WordPressApi extends DataSource {
 		}
 	}
 
-	async #getTags(ids) {
-		return Promise.all(ids.map(tagId => {
+	// Uses embedded terms when available
+	async #getTerms(rawEntry, taxonomy, ids = [], getUrl) {
+		let embeddedTerms = rawEntry._embedded?.["wp:term"];
+		if(Array.isArray(embeddedTerms)) {
+			return embeddedTerms.flat().filter(term => term?.taxonomy === taxonomy && ids.includes(term.id));
+		}
+
+		return Promise.all(ids.map(id => {
 			// Warning: extra API call
-			return this.getData(this.#getTagsUrl(tagId), this.getType()).then(tagData => {
-				return tagData.name;
-			});
+			return this.getData(getUrl(id), this.getType());
 		}));
 	}
 
-	async #getCategories(ids) {
-		let categoryNames = await Promise.all(ids.map(categoryId => {
-			// Warning: extra API call
-			return this.getData(this.#getCategoryUrl(categoryId), this.getType()).then(categoryData => {
-				return categoryData.name;
-			});
-		}));
+	async #getTags(rawEntry) {
+		let tags = await this.#getTerms(rawEntry, "post_tag", rawEntry.tags, id => this.#getTagsUrl(id));
+		return tags.map(tag => tag.name);
+	}
 
-		return categoryNames.filter(name => {
-			return !WordPressApi.IGNORED_CATEGORIES.includes(name);
-		});
+	async #getCategories(rawEntry) {
+		let categories = await this.#getTerms(rawEntry, "category", rawEntry.categories, id => this.#getCategoryUrl(id));
+
+		return categories.filter(category => {
+			return category.id !== this.#defaultCategoryId && !WordPressApi.IGNORED_CATEGORIES.includes(category.name);
+		}).map(category => category.name);
 	}
 
 	getRawEntryDates(rawEntry) {
@@ -363,12 +390,12 @@ export class WordPressApi extends DataSource {
 		}
 
 		// Pages and custom post types may not support categories or tags
-		let categories = await this.#getCategories(rawEntry.categories || []);
+		let categories = await this.#getCategories(rawEntry);
 		if(categories.length) {
 			metadata.categories = categories;
 		}
 
-		let tags = await this.#getTags(rawEntry.tags || []);
+		let tags = await this.#getTags(rawEntry);
 		if(tags.length) {
 			metadata.tags = tags;
 		}

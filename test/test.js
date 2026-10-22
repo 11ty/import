@@ -248,7 +248,7 @@ function addWordPressTypes(importer, types = {}) {
 
 function getWordPressPagedUrl(restBase, pageNumber) {
 	let status = process.env.WORDPRESS_USERNAME ? "&status=publish%2Cdraft" : "";
-	return `https://blog.fontawesome.com/wp-json/wp/v2/${restBase}/?page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia${status}`;
+	return `https://blog.fontawesome.com/wp-json/wp/v2/${restBase}/?page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia%2Cwp%3Aterm${status}`;
 }
 
 test("WordPress pages and custom post types, issue #17", async (t) => {
@@ -306,6 +306,71 @@ test("WordPress pages and custom post types, issue #17", async (t) => {
 	assert.equal(entries[2].content, "");
 });
 
+function getWordPressPostWithTerms() {
+	let [post] = require("./sources/blog-awesome-posts.json");
+	return {
+		...post,
+		categories: [5, 7, 1],
+		tags: [9],
+		_embedded: {
+			...post._embedded,
+			"wp:term": [
+				[
+					{ id: 5, taxonomy: "category", name: "News" },
+					{ id: 7, taxonomy: "category", name: "General" },
+					{ id: 1, taxonomy: "category", name: "Sin categoría" },
+				],
+				[{ id: 9, taxonomy: "post_tag", name: "CSS" }],
+			],
+		},
+	};
+}
+
+test("WordPress embedded terms are used without extra requests", async (t) => {
+	withEnv(t, { WORDPRESS_USERNAME: undefined, WORDPRESS_PASSWORD: undefined });
+
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("wordpress", { url: "https://blog.fontawesome.com/", postTypes: "posts" });
+
+	// No term (or settings) overrides: requests would fail
+	addWordPressTypes(importer);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 1), [getWordPressPostWithTerms()]);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 2), []);
+	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/users/155431370", require("./sources/blog-awesome-author.json"));
+
+	let [entry] = await importer.getEntries({ contentType: "html" });
+	// Default category (ID 1) is ignored even when renamed or translated
+	assert.deepEqual(entry.metadata.categories, ["News", "General"]);
+	assert.deepEqual(entry.metadata.tags, ["CSS"]);
+	assert.equal(importer.getCounts().errors, 0);
+});
+
+test("WordPress default category comes from settings when authenticated", async (t) => {
+	withEnv(t, { WORDPRESS_USERNAME: "user", WORDPRESS_PASSWORD: "pass" });
+
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("wordpress", { url: "https://blog.fontawesome.com/", postTypes: "posts" });
+
+	addWordPressTypes(importer);
+	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/settings/", { default_category: 7 });
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 1), [getWordPressPostWithTerms()]);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 2), []);
+	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/users/155431370", require("./sources/blog-awesome-author.json"));
+
+	let [entry] = await importer.getEntries({ contentType: "html" });
+	assert.deepEqual(entry.metadata.categories, ["News", "Sin categoría"]);
+});
+
 function withEnv(t, env) {
 	let previous = {};
 	for(let [key, value] of Object.entries(env)) {
@@ -358,7 +423,7 @@ test("WordPress API discovery falls back to WordPress.com, issue #16", async (t)
 		postTypes: "posts",
 	});
 
-	let getUrl = pageNumber => `https://public-api.wordpress.com/wp/v2/sites/example.com/posts/?page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia`;
+	let getUrl = pageNumber => `https://public-api.wordpress.com/wp/v2/sites/example.com/posts/?page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia%2Cwp%3Aterm`;
 	importer.addDataOverride("wordpress", "https://public-api.wordpress.com/wp/v2/sites/example.com/types/", { post: { rest_base: "posts" } });
 	importer.addDataOverride("wordpress", getUrl(1), [getWordPressDotComPost()]);
 	importer.addDataOverride("wordpress", getUrl(2), []);
@@ -385,7 +450,7 @@ test("WordPress API discovery prefers WordPress.com with a token (for drafts)", 
 		postTypes: "posts",
 	});
 
-	let getUrl = pageNumber => `https://public-api.wordpress.com/wp/v2/sites/example.com/posts/?page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia&status=publish%2Cdraft`;
+	let getUrl = pageNumber => `https://public-api.wordpress.com/wp/v2/sites/example.com/posts/?page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia%2Cwp%3Aterm&status=publish%2Cdraft`;
 	// Would be used without a token
 	importer.addDataOverride("wordpress", "https://example.com/wp-json/wp/v2/types/", { post: { rest_base: "posts" } });
 	importer.addDataOverride("wordpress", "https://public-api.wordpress.com/wp/v2/sites/example.com/types/", { post: { rest_base: "posts" } });
@@ -411,7 +476,7 @@ test("WordPress API discovery supports sites without pretty permalinks", async (
 		postTypes: "posts",
 	});
 
-	let getUrl = pageNumber => `https://example.com/blog/?rest_route=/wp/v2/posts/&page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia`;
+	let getUrl = pageNumber => `https://example.com/blog/?rest_route=/wp/v2/posts/&page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia%2Cwp%3Aterm`;
 	importer.addDataOverride("wordpress", "https://example.com/blog/?rest_route=/wp/v2/types/", { post: { rest_base: "posts" } });
 	importer.addDataOverride("wordpress", getUrl(1), [getWordPressDotComPost()]);
 	importer.addDataOverride("wordpress", getUrl(2), []);
