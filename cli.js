@@ -82,11 +82,19 @@ let { positionals, values } = parseArgs({
 			type: "string",
 			default: "",
 		},
+		until: {
+			type: "string",
+			default: "",
+		},
+		contentselector: {
+			type: "string",
+			default: "",
+		},
 	},
 });
 
 let [ type, target ] = positionals;
-let { quiet, dryrun, output, help, version, overwrite, cacheduration, format, persist, assetrefs, avatarrefs, within, preserve, posttypes, limit } = values;
+let { quiet, dryrun, output, help, version, overwrite, cacheduration, format, persist, assetrefs, avatarrefs, within, preserve, posttypes, limit, until, contentselector } = values;
 
 if(version) {
 	const require = createRequire(import.meta.url);
@@ -142,6 +150,12 @@ if(help) {
   # Only the newest entries (stops fetching once reached)
   npx @11ty/import [type] [target] --limit=5
 
+  # Only entries created on or before a year, date, or timestamp prefix (wayback, typepad, and hobix also limit captures)
+  npx @11ty/import [type] [target] --until=2009
+
+  # Content element for archived pages, pages without a match are skipped (wayback, typepad, hobix)
+  npx @11ty/import wayback [target] --contentselector=div.entry
+
   # Import webmention.io webmentions into post data files (requires WEBMENTION_IO_TOKEN)
   npx @11ty/import webmentions example.com
 `);
@@ -166,7 +180,13 @@ importer.setVerbose(!quiet);
 importer.setSafeMode(!overwrite);
 importer.setDryRun(dryrun);
 try {
-	importer.addSource(type, posttypes || limit ? { url: target, postTypes: posttypes || undefined, limit: limit || undefined } : target);
+	importer.addSource(type, posttypes || limit || until || contentselector ? {
+		url: target,
+		postTypes: posttypes || undefined,
+		limit: limit || undefined,
+		until: until || undefined,
+		contentSelector: contentselector || undefined,
+	} : target);
 } catch(e) {
 	console.error(e.message);
 	process.exit(1);

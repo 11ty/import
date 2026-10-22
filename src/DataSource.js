@@ -24,6 +24,8 @@ class DataSource {
 	#outputFolder = ".";
 	#limit;
 	#limitCount = 0;
+	#until;
+	#untilSkipped = 0;
 
 	constructor() {
 		this.isVerbose = true;
@@ -32,6 +34,33 @@ class DataSource {
 
 	setWithin(within) {
 		this.within = within;
+	}
+
+	// Entries created on or before a year, date, or timestamp prefix (e.g. `2009`, `2009-08-19`, `20090819`), in UTC
+	setUntil(until) {
+		let timestamp = DataSource.parseUntil(until);
+		let [year, month = 1, day = 1, hours = 0, minutes = 0, seconds = 0] = timestamp.match(/^\d{4}|\d{2}/g).map(Number);
+		let parts = [year, month - 1, day, hours, minutes, seconds];
+		// Exclusive end of the last unit given
+		parts[(timestamp.length - 4) / 2] += 1;
+		this.#until = new Date(Date.UTC(...parts));
+		return timestamp;
+	}
+
+	static parseUntil(until) {
+		let timestamp = String(until).replace(/[-:T\s]/g, "");
+		let [year, month = 1, day = 1, hours = 0, minutes = 0, seconds = 0] = timestamp.match(/^\d{4}|\d{2}/g)?.map(Number) || [];
+		let date = new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
+		// Out of range values (e.g. month 13) roll over
+		if(!/^\d{4}(?:\d{2}){0,5}$/.test(timestamp) || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day || date.getUTCHours() !== hours || date.getUTCMinutes() !== minutes || date.getUTCSeconds() !== seconds) {
+			throw new Error(`Invalid until value \`${until}\`, expected a year, date, or timestamp prefix (e.g. 2009, 2009-08-19, 20090819)`);
+		}
+		return timestamp;
+	}
+
+	isAfterUntil(date) {
+		date = this.toDateObj(date);
+		return Boolean(this.#until && date && !isNaN(date) && date >= this.#until);
 	}
 
 	setVerbose(isVerbose) {
@@ -317,7 +346,15 @@ class DataSource {
 				break;
 			}
 			if(this.isWithin(rawEntry)) {
+				if(this.isAfterUntil(this.getRawEntryDates?.(rawEntry)?.created)) {
+					this.#untilSkipped++;
+					continue;
+				}
 				let cleaned = typeof this.cleanEntry === "function" ? await this.cleanEntry(rawEntry, data) : rawEntry;
+				if(cleaned && this.isAfterUntil(cleaned.date)) {
+					this.#untilSkipped++;
+					continue;
+				}
 				if(cleaned) {
 					this.#limitCount++;
 				}
@@ -348,6 +385,7 @@ class DataSource {
 				try {
 					while(!this.isLimitReached() && (pagedUrl = url(pageNumber))) {
 						let found = 0;
+						let skipped = this.#untilSkipped;
 						let data = await this.getData(pagedUrl, this.getType(), false);
 						let cleanedData = await this.getCleanedEntries(data);
 
@@ -358,7 +396,8 @@ class DataSource {
 							found++;
 						}
 
-						if(found === 0) {
+						// Pages newer than `until` are skipped, not the end
+						if(found === 0 && this.#untilSkipped === skipped) {
 							break;
 						}
 
@@ -391,6 +430,8 @@ class DataSource {
 
 	// Shared post-processing for cleaned entries (for sources that override `getEntries`)
 	finalizeEntries(entries) {
+		entries = entries.filter(entry => !this.isAfterUntil(entry?.date));
+
 		// Feeds can list the same entry more than once (e.g. a Bluesky self-repost), keep the first
 		let seen = new Set();
 		entries = entries.filter(entry => {

@@ -2254,7 +2254,10 @@ test("Blogger", async (t) => {
 	importer.addDataOverride("blogger", "https://example.blogspot.com/feeds/pages/default?alt=json&max-results=150&start-index=1", {
 		feed: {
 			openSearch$totalResults: { $t: "1" },
-			entry: [entry("200", { published: { $t: "2026-01-01T12:00:00.000-07:00" } })],
+			entry: [entry("200", {
+				published: { $t: "2026-01-01T12:00:00.000-07:00" },
+				content: { type: "html", $t: `<p><a href="https://example.blogspot.com/2026/10/post-100.html#more">Post</a></p>` },
+			})],
 		},
 	});
 	importer.addDataOverride("blogger", "https://example.blogspot.com/feeds/100/comments/default?alt=json&max-results=150&start-index=1", {
@@ -2295,6 +2298,8 @@ test("Blogger", async (t) => {
 		{ id: "301", parentId: "300", url: "https://example.blogspot.com/2026/10/post-100.html?showComment=2#c301", author: { name: "Unknown" }, date: new Date("2026-10-01T21:00:00.000Z"), content: "Reply" },
 	]);
 
+	// Links to imported posts point to their files
+	assert.equal(page.content.trim(), "[Post](post-100.md#more)");
 	assert.equal(page.metadata.postType, "page");
 	assert.deepEqual(page.authors, [{ name: "Unknown" }]);
 	assert.equal(page.comments, undefined);
@@ -2437,8 +2442,8 @@ test("Wayback Machine", async (t) => {
 		archiveUrl: "https://web.archive.org/web/20150101000000/http://www.example.com/blog/first/",
 		media: { featuredImage: "https://web.archive.org/web/20150101000000id_/http://www.example.com/images/cover.png" },
 	});
-	// Links to the site are root-relative, the title, navigation, header, footer, scripts, and comments are removed
-	assert.equal(cleanContent(first.content), `<p>Hello <a href="/blog/second.html">second</a> and <a href="http://other.example/">other</a>.</p>
+	// Links to imported pages point to their files, the title, navigation, header, footer, scripts, and comments are removed
+	assert.equal(cleanContent(first.content), `<p>Hello <a href="second.html">second</a> and <a href="http://other.example/">other</a>.</p>
 <img data-src="photo.jpg" src="https://web.archive.org/web/20150101000000id_/http://www.example.com/blog/first/photo.jpg">`);
 
 	assert.equal(second.title, "Another heading");
@@ -2447,6 +2452,150 @@ test("Wayback Machine", async (t) => {
 	assert.deepEqual(second.date, new Date("2012-01-01T00:00:00Z"));
 	assert.deepEqual(second.authors, []);
 	assert.equal(cleanContent(second.content), "<p>Text</p>");
+});
+
+test("Wayback Machine links to imported pages", async (t) => {
+	let importer = getImporter();
+	importer.addSource("wayback", "example.com");
+
+	importer.addDataOverride("wayback", "https://web.archive.org/cdx/search/cdx?url=example.com%2F&matchType=prefix&output=json&fl=urlkey%2Ctimestamp%2Coriginal&filter=statuscode%3A200&collapse=digest&showResumeKey=true&limit=5000&filter=mimetype%3Atext%2Fhtml", [
+		["com,example)/book", "20090101000000", "http://example.com/book/"],
+		["com,example)/book/chapter-1.html", "20090101000000", "http://example.com/book/chapter-1.html"],
+	]);
+	importer.addDataOverride("wayback", "https://web.archive.org/web/20090101000000id_/http://example.com/book/", `<html><head><title>Book</title></head><body><main><p><a href="/book/chapter-1.html#section1">One</a> <a href="/book/chapter-2.html">Two</a></p></main></body></html>`);
+	importer.addDataOverride("wayback", "https://web.archive.org/web/20090101000000id_/http://example.com/book/chapter-1.html", `<html><head><title>One</title></head><body><main><p><a href="../book/">Contents</a></p></main></body></html>`);
+
+	let entries = await importer.getEntries({ contentType: "markdown" });
+	let book = entries.find(entry => entry.title === "Book");
+	let chapter = entries.find(entry => entry.title === "One");
+
+	assert.equal(book.filePath, "book.md");
+	assert.equal(chapter.filePath, "book/chapter-1.md");
+	// Pages that weren’t imported stay root-relative
+	assert.equal(book.content.trim(), "[One](book/chapter-1.md#section1) [Two](/book/chapter-2.html)");
+	assert.equal(chapter.content.trim(), "[Contents](../book.md)");
+});
+
+test("Wayback Machine until option", async (t) => {
+	let importer = getImporter();
+	importer.addSource("wayback", { url: "https://web.archive.org/web/2020/http://example.com/", until: "2009-08-19" });
+	assert.equal(importer.getSources()[0].to, "20090819");
+
+	importer.addSource("typepad", { url: "example.typepad.com", until: "2009" });
+	assert.equal(importer.getSources()[1].to, "2009");
+
+	assert.throws(() => importer.addSource("wayback", { url: "example.com", until: "last year" }), /Invalid until value/);
+	assert.throws(() => importer.addSource("rss", { url: "https://example.com/feed.xml", until: "200913" }), /Invalid until value/);
+});
+
+test("Until option skips newer entries for any source", async (t) => {
+	let importer = getImporter();
+	importer.addSource("jsonfeed", { url: "https://example.com/feed.json", until: "2009-08" });
+
+	let item = (id, date) => ({ id, url: `https://example.com/posts/${id}/`, title: id, content_html: "<p>Hi</p>", date_published: date });
+	importer.addDataOverride("jsonfeed", "https://example.com/feed.json", {
+		version: "https://jsonfeed.org/version/1.1",
+		title: "Example",
+		next_url: "https://example.com/feed.json?page=2",
+		items: [item("newer", "2009-09-01T00:00:00Z")],
+	});
+	importer.addDataOverride("jsonfeed", "https://example.com/feed.json?page=2", {
+		version: "https://jsonfeed.org/version/1.1",
+		title: "Example",
+		items: [item("last-day", "2009-08-31T23:59:59Z"), item("older", "2008-01-01T00:00:00Z"), item("undated")],
+	});
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.deepEqual(entries.map(entry => entry.title).sort(), ["last-day", "older", "undated"]);
+});
+
+test("Wayback Machine skips deeply nested pages", async (t) => {
+	let importer = getImporter();
+	importer.addSource("wayback", "example.com");
+	importer.getSources()[0].setVerbose(false);
+
+	importer.addDataOverride("wayback", "https://web.archive.org/cdx/search/cdx?url=example.com%2F&matchType=prefix&output=json&fl=urlkey%2Ctimestamp%2Coriginal&filter=statuscode%3A200&collapse=digest&showResumeKey=true&limit=5000&filter=mimetype%3Atext%2Fhtml", [
+		["urlkey", "timestamp", "original"],
+		["com,example)/deep", "20090101000000", "http://example.com/deep"],
+		["com,example)/ok", "20090101000000", "http://example.com/ok"],
+	]);
+	importer.addDataOverride("wayback", "https://web.archive.org/web/20090101000000id_/http://example.com/deep", `<html><body>${"<ol><li>".repeat(10000)}Spam</body></html>`);
+	importer.addDataOverride("wayback", "https://web.archive.org/web/20090101000000id_/http://example.com/ok", `<html><body><main><h1>OK</h1><p>Text</p></main></body></html>`);
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.deepEqual(entries.map(entry => entry.title), ["OK"]);
+});
+
+test("Wayback Machine content selector", async (t) => {
+	let importer = getImporter();
+	importer.addSource("wayback", { url: "example.com", contentSelector: "div.entry" });
+
+	importer.addDataOverride("wayback", "https://web.archive.org/cdx/search/cdx?url=example.com%2F&matchType=prefix&output=json&fl=urlkey%2Ctimestamp%2Coriginal&filter=statuscode%3A200&collapse=digest&showResumeKey=true&limit=5000&filter=mimetype%3Atext%2Fhtml", [
+		["urlkey", "timestamp", "original"],
+		["com,example)/post", "20090101000000", "http://example.com/post"],
+		["com,example)/about", "20090101000000", "http://example.com/about"],
+	]);
+	importer.addDataOverride("wayback", "https://web.archive.org/web/20090101000000id_/http://example.com/post", `<html><head><title>Post</title></head><body><main><p>Sidebar</p><span class="entry">Not a div</span><div class="other entry"><p>Body</p></div></main></body></html>`);
+	importer.addDataOverride("wayback", "https://web.archive.org/web/20090101000000id_/http://example.com/about", `<html><head><title>About</title></head><body><main><p>About</p></main></body></html>`);
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.deepEqual(entries.map(entry => [entry.title, entry.content]), [["Post", "<p>Body</p>"]]);
+
+	assert.throws(() => importer.addSource("wayback", { url: "example.com", contentSelector: "div > p" }), /Invalid content selector/);
+	assert.throws(() => importer.addSource("rss", { url: "https://example.com/feed.xml", contentSelector: ".entry" }), /not supported by the rss source/);
+});
+
+test("Hobix (Wayback Machine)", async (t) => {
+	let importer = getImporter();
+	importer.addSource("hobix", "redhanded.hobix.com");
+
+	importer.addDataOverride("hobix", "https://web.archive.org/cdx/search/cdx?url=redhanded.hobix.com%2F&matchType=prefix&output=json&fl=urlkey%2Ctimestamp%2Coriginal&filter=statuscode%3A200&collapse=digest&showResumeKey=true&limit=5000&filter=mimetype%3Atext%2Fhtml", [
+		["urlkey", "timestamp", "original"],
+		["com,hobix,redhanded)/", "20090101000000", "http://redhanded.hobix.com/"],
+		["com,hobix,redhanded)/cult", "20090101000000", "http://redhanded.hobix.com/cult"],
+		["com,hobix,redhanded)/2005/03/24.html", "20090101000000", "http://redhanded.hobix.com/2005/03/24.html"],
+		["com,hobix,redhanded)/-h/heyalrightwell.html", "20090101000000", "http://redhanded.hobix.com/-h/heyAlrightWell.html"],
+		["com,hobix,redhanded)/rdoc/http.html", "20090101000000", "http://redhanded.hobix.com/rdoc/http.html"],
+	]);
+
+	let date = (ms, text) => `<script type="text/javascript">document.write((new Date(${ms})).strftime("%d %b %Y"));</script><noscript>${text}</noscript>`;
+	importer.addDataOverride("hobix", "https://web.archive.org/web/20090101000000id_/http://redhanded.hobix.com/-h/heyAlrightWell.html", `<html><head><title>RedHanded &raquo; Hey, Alright, Well</title></head><body>
+<div id="sidebar"><h2>Archive</h2></div>
+<div class="entry">
+	<h2 class="entryTitle">Hey, Alright, Well
+	<span class="entryPermalink"><a href="http://redhanded.hobix.com/-h/heyAlrightWell.html">#</a></span></h2>
+	<div class="entrySection">by <a href="http://whytheluckystiff.net/">why</a> in <a href="/-h">-h</a></div>
+	<div class="entryContent"><p>A note to <a href="/cult/">readers</a>.</p></div>
+</div>
+<div class="entryFooter">${date(1111682784000, "<nobr>24 Mar 2005</nobr> at <nobr>10:46</nobr> UTC")} | 2 comments</div>
+<div id="comments">
+	<div class="entry">
+		<div class="entryAttrib"><div class="entryAuthor"><h3>Joao</h3></div><div class="entryTime">said on <noscript><nobr>24 Mar 2005</nobr> at <nobr>10:57</nobr> UTC</noscript></div></div>
+		<div class="entryContentOuter"><div class="entryContent"><p>I for one like your attitudes.</p></div></div>
+	</div>
+	<div class="entry">
+		<div class="entryAttrib"><div class="entryAuthor"><h3>UUuuugh</h3></div><div class="entryTime">said on ${date(1111683361000, "")}</div></div>
+		<div class="entryContentOuter"><div class="entryContent"><p>Flaming Lips?</p></div></div>
+	</div>
+	<div class="entry"><p><small>Comments are closed for this entry.</small></p></div>
+</div>
+</body></html>`);
+	importer.addDataOverride("hobix", "https://web.archive.org/web/20090101000000id_/http://redhanded.hobix.com/rdoc/http.html", `<html><head><title>HTTP</title></head><body><p>Docs</p></body></html>`);
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.equal(entries.length, 1);
+
+	let [post] = entries;
+	assert.equal(post.title, "Hey, Alright, Well");
+	assert.equal(post.filePath, "-h/heyAlrightWell.html");
+	assert.deepEqual(post.date, new Date(1111682784000));
+	assert.deepEqual(post.authors, [{ name: "why" }]);
+	assert.deepEqual(post.tags, ["-h"]);
+	assert.equal(cleanContent(post.content), `<p>A note to <a href="/cult/">readers</a>.</p>`);
+	assert.deepEqual(post.comments.map(({ id, author, date, content }) => ({ id, author, date, content })), [
+		{ id: "1111661820000", author: { name: "Joao" }, date: new Date("2005-03-24T10:57:00Z"), content: "<p>I for one like your attitudes.</p>" },
+		{ id: "1111683361000", author: { name: "UUuuugh" }, date: new Date(1111683361000), content: "<p>Flaming Lips?</p>" },
+	]);
 });
 
 test("Typepad (Wayback Machine)", async (t) => {

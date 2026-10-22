@@ -31,6 +31,7 @@ import { DevTo } from "./DataSource/DevTo.js";
 import { MediumExport } from "./DataSource/MediumExport.js";
 import { WaybackMachine } from "./DataSource/WaybackMachine.js";
 import { Typepad } from "./DataSource/Typepad.js";
+import { Hobix } from "./DataSource/Hobix.js";
 import { Linktree } from "./DataSource/Linktree.js";
 import { Webmentions } from "./DataSource/Webmentions.js";
 
@@ -273,6 +274,8 @@ class Importer {
 				cls = MediumExport;
 			} else if(type === "typepad") {
 				cls = Typepad;
+			} else if(type === "hobix") {
+				cls = Hobix;
 			} else if(type === "wayback") {
 				cls = WaybackMachine;
 			} else if(type === "linktree") {
@@ -295,6 +298,8 @@ class Importer {
 		let comments;
 		let content;
 		let limit;
+		let until;
+		let contentSelector;
 
 		if(typeof options === "string") {
 			identifier = options;
@@ -306,6 +311,8 @@ class Importer {
 			comments = options.comments;
 			content = options.content;
 			limit = options.limit;
+			until = options.until;
+			contentSelector = options.contentSelector;
 		}
 
 		if(alias?.getTarget && identifier) {
@@ -342,6 +349,17 @@ class Importer {
 
 		if(limit) {
 			source.setLimit(limit);
+		}
+
+		if(until) {
+			source.setUntil(until);
+		}
+
+		if(contentSelector) {
+			if(typeof source.setContentSelector !== "function") {
+				throw new Error(`The contentSelector option is not supported by the ${source.constructor.TYPE} source type.`);
+			}
+			source.setContentSelector(contentSelector);
 		}
 
 		// Enabled by default for sources that support comments
@@ -588,6 +606,7 @@ class Importer {
 		}
 
 		let entries = [];
+		let skippedEntries = [];
 		for(let source of this.sources) {
 			for(let entry of await source.getEntries()) {
 				let filePathContentType;
@@ -607,7 +626,7 @@ class Importer {
 
 				// to prevent fetching assets and transforming contents on entries that won’t get written
 				if(options.target === "fs" && this.shouldSkipEntry(entry)) {
-					// do nothing
+					skippedEntries.push(entry);
 				} else {
 					entries.push(entry);
 				}
@@ -617,6 +636,9 @@ class Importer {
 		if(maxLimit) {
 			entries = entries.slice(0, maxLimit);
 		}
+
+		// Skipped entries are included, their files already exist
+		this.htmlTransformer.setEntryFilePaths([...entries, ...skippedEntries]);
 
 		// After skipped entries are removed to avoid extra requests
 		await this.addComments(entries);

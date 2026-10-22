@@ -48,6 +48,11 @@ npx @11ty/import [type] [target] --cacheduration=20m
 # Only import the newest entries, fetching stops once reached
 npx @11ty/import [type] [target] --limit=5
 
+# Only import entries created on or before a year, date, or timestamp prefix (UTC)
+# For wayback, typepad, and hobix, also only uses captures archived on or before it
+npx @11ty/import [type] [target] --until=2009
+npx @11ty/import [type] [target] --until=2009-08-19
+
 # Only import entries created (or updated) within a duration (default: *)
 # Same syntax as --cacheduration
 npx @11ty/import [type] [target] --within=7d
@@ -179,15 +184,16 @@ npx @11ty/import bluesky @11ty.dev
 
 #### Experimental
 
-- `blogger` (blog URL, custom domains too)
+- `blogger` (blog URL, custom domains too, links to other imported posts point to their files)
 - `devto` (DEV username or organization)
 - `ghost` (site URL)
 - `linktree` (Linktree username or profile URL)
 - `medium` (extracted Medium export folder path)
 - `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
 - `typepad` (Typepad blog URL or domain, optionally with a path, from the Wayback Machine)
+- `hobix` (Hobix blog URL or domain, from the Wayback Machine)
 - `twitter` (Twitter/X archive `.zip` file or extracted folder path)
-- `wayback` (site URL or domain, optionally with a path, from the Internet Archive’s Wayback Machine)
+- `wayback` (site URL or domain, optionally with a path, from the Internet Archive’s Wayback Machine, links to other imported pages point to their files)
 - `webmentions` (domain or site URL, data files only, see [Webmentions](#webmentions))
 
 ```sh
@@ -221,11 +227,20 @@ npx @11ty/import twitter ./twitter-2026-01-01.zip
 npx @11ty/import wayback example.com
 npx @11ty/import wayback https://example.com/blog/
 
-# Only captures on or before a date (any timestamp prefix: 2022, 202211, 20221120), e.g. before the domain was parked
+# Only captures on or before a year, date, or timestamp prefix (2022, 2022-11-20, 20221120), e.g. before the domain was parked
+npx @11ty/import wayback example.com --until=2022
+
+# Same, using a Wayback Machine URL
 npx @11ty/import wayback https://web.archive.org/web/2022/https://example.com/
+
+# Use a specific content element (tag, id, and/or class names), pages without a match are skipped
+npx @11ty/import wayback example.com --contentselector=div.entry
 
 # Import posts and pages with comments from a Typepad blog (offline since September 30, 2025) via the Wayback Machine
 npx @11ty/import typepad sethgodin.typepad.com/seths_blog/
+
+# Import posts with comments from a Hobix blog (e.g. _why’s RedHanded) via the Wayback Machine
+npx @11ty/import hobix redhanded.hobix.com --until=2009
 ```
 
 ### Comments
@@ -250,6 +265,7 @@ Comments with content warnings or from authors that opted out of wider distribut
 - `bluesky`: replies (private when labeled or the author discourages showing their account to logged-out users)
 - `fediverse`: public and unlisted replies known to the user’s server (private when unlisted, marked sensitive, or the author opted out of search engine indexing)
 - `typepad`: comments in the latest archived copy of each post
+- `hobix`: comments in the latest archived copy of each post (commenter names only)
 - `twitter`: your own replies in a thread, as comments on its first tweet (with local media)
 - `rss`, `atom`: per-post comment feeds (`wfw:commentRss` or `<link rel="replies">`), when available
 

@@ -8,6 +8,7 @@ export class Blogger extends DataSource {
 	static PER_PAGE = 150;
 	static DEFAULT_AVATAR_HOSTS = ["img1.blogblog.com", "img2.blogblog.com"];
 	static SUPPORTS_COMMENTS = true;
+	static LINKS_TO_FILES = true;
 
 	#feed = "posts";
 	#startIndex = 1;

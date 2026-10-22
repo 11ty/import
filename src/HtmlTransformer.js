@@ -1,3 +1,4 @@
+import path from "node:path";
 import posthtml from "posthtml";
 import urls from "@11ty/posthtml-urls";
 import * as entities from "entities";
@@ -6,9 +7,38 @@ const ASSET_TAGS = ["img", "video", "audio", "source", "link", "script", "track"
 
 class HtmlTransformer {
 	#fetcher;
+	// Page key to imported file path
+	#filePaths = new Map();
 
 	setFetcher(fetcher) {
 		this.#fetcher = fetcher;
+	}
+
+	setEntryFilePaths(entries) {
+		this.#filePaths = new Map();
+		for(let entry of entries) {
+			let key = entry.filePath && HtmlTransformer.getPageKey(entry.url);
+			if(key && !this.#filePaths.has(key)) {
+				this.#filePaths.set(key, entry.filePath);
+			}
+		}
+	}
+
+	// Same page with or without `www.`, a trailing slash, `index.html`, or extension
+	static getPageKey(url) {
+		try {
+			let { hostname, pathname, search } = new URL(url);
+			if(search) {
+				return;
+			}
+			pathname = pathname
+				.replace(/\/index\.(?:html?|php)$/i, "")
+				.replace(/\.(?:html?|php)$/i, "")
+				.replace(/\/$/, "");
+			return `${this.#normalizeHostname(hostname)}${pathname}`;
+		} catch(e) {
+			// invalid URL
+		}
 	}
 
 	static #normalizeHostname(hostname) {
@@ -67,7 +97,15 @@ class HtmlTransformer {
 			return this.#fetcher.fetchAsset(resolved.toString(), entry);
 		}
 
-		return HtmlTransformer.getSiteRelativeUrl(url, source?.getSiteUrl());
+		let siteRelativeUrl = HtmlTransformer.getSiteRelativeUrl(url, source?.getSiteUrl());
+
+		// Links to other imported pages point to their files (relative to this one), for sources with URLs that don’t match their output (e.g. `.html`)
+		let filePath = siteRelativeUrl && source?.constructor.LINKS_TO_FILES && entry.filePath && this.#filePaths.get(HtmlTransformer.getPageKey(resolved));
+		if(filePath) {
+			return `${path.posix.relative(path.posix.dirname(entry.filePath), filePath)}${resolved.hash}`;
+		}
+
+		return siteRelativeUrl;
 	}
 
 	async transform(content, entry) {

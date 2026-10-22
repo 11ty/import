@@ -2,6 +2,7 @@ import posthtml from "posthtml";
 import * as entities from "entities";
 
 import { DataSource } from "../DataSource.js";
+import { Logger } from "../Logger.js";
 
 // Latest archived HTML pages for a site (or a path on a site) from the Internet Archive’s Wayback Machine (https://archive.org/developers/wayback-cdx-server.html)
 export class WaybackMachine extends DataSource {
@@ -16,14 +17,34 @@ export class WaybackMachine extends DataSource {
 	static CONTENT_CLASSES = ["e-content", "entry-content", "post-content", "article-content", "post-body"];
 	static REMOVED_TAGS = ["script", "style", "noscript", "template", "nav", "header", "footer", "aside", "form"];
 	static ASSET_ATTRIBUTES = ["src", "poster", "srcset"];
+	static LINKS_TO_FILES = true;
 
 	// Original asset URL to the first archive URL used for it
 	#assetUrls = new Map();
+	#contentSelector;
 
 	constructor(target) {
 		super();
 		this.url = WaybackMachine.parseTarget(target);
 		this.to = WaybackMachine.getArchiveTimestamp(String(target).trim());
+	}
+
+	// Simple selector for the content element (e.g. `div.entry`, `.entry-content`, `#main`), pages without a match are skipped
+	setContentSelector(selector) {
+		let match = String(selector).trim().match(/^([a-z][a-z0-9-]*)?(?:#([\w-]+))?((?:\.[\w-]+)*)$/i);
+		if(!match || !match.slice(1).some(Boolean)) {
+			throw new Error(`Invalid content selector \`${selector}\`, expected a tag, id, and/or class names (e.g. div.entry, .entry-content, #main)`);
+		}
+		let [, tag, id, classes] = match;
+		let classNames = classes.split(".").filter(Boolean);
+		this.#contentSelector = node => (!tag || node.tag?.toLowerCase() === tag.toLowerCase())
+			&& (!id || node.attrs?.id === id)
+			&& classNames.every(name => WaybackMachine.hasClass(node, name));
+	}
+
+	// Also limits captures (e.g. before a domain was parked)
+	setUntil(until) {
+		this.to = super.setUntil(until);
 	}
 
 	// Captures on or before the Wayback Machine URL timestamp (e.g. `2022` or `20221120`) skip later content, like a parked domain
@@ -402,6 +423,21 @@ export class WaybackMachine extends DataSource {
 			return;
 		}
 
+		// Pathologically nested markup (e.g. thousands of unclosed tags) overflows the call stack, the page is skipped
+		try {
+			return await this.#cleanPage(rawEntry, html);
+		} catch(e) {
+			if(!(e instanceof RangeError)) {
+				throw e;
+			}
+			if(this.isVerbose) {
+				Logger.error(`Skipping ${this.getLogUrl(archiveUrl)}: markup is nested too deeply to parse`);
+			}
+		}
+	}
+
+	async #cleanPage(rawEntry, html) {
+		let { timestamp, original } = rawEntry;
 		let url = new URL(original).toString();
 		let { tree } = await posthtml().process(String(html));
 		let meta = WaybackMachine.getMeta(tree);
@@ -409,7 +445,10 @@ export class WaybackMachine extends DataSource {
 		let baseUrl = this.#resolveUrl(WaybackMachine.find(tree, node => node.tag === "base")?.attrs?.href || "", url) || url;
 
 		let pageData = await this.getPageData(tree, { baseUrl, timestamp });
-		let contentNode = this.getContentNode(tree);
+		let contentNode = this.#contentSelector ? WaybackMachine.find(tree, this.#contentSelector) : this.getContentNode(tree);
+		if(this.#contentSelector && !contentNode) {
+			return;
+		}
 		let contentNodes = WaybackMachine.removeNodes(contentNode ? contentNode.content : tree);
 		this.resolveUrls(contentNodes, baseUrl, timestamp);
 
