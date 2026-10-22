@@ -75,7 +75,8 @@ npx @11ty/import [type] [target] --persist=github:zachleat/wp-awesome
 - `bluesky` (username)
 - `fediverse` (username)
 - `rss` (URL)
-- `wordpress` (blog home page URL)
+- `wordpress` (blog home page URL, uses the site’s own `/wp-json/` API, or `https://public-api.wordpress.com` for `.wordpress.com` URLs)
+- `wordpress-hosted` (WordPress.com blog home page URL, supports custom domains, uses the `https://public-api.wordpress.com` API)
 - `youtubeuser` (user id)
 
 #### YouTube
@@ -95,6 +96,10 @@ npx @11ty/import wordpress https://blog.fontawesome.com
 
 # Import posts, pages, and a custom post type (must be available in the REST API)
 npx @11ty/import wordpress https://blog.fontawesome.com --posttypes=posts,pages,product
+
+# Import from WordPress.com (`.wordpress.com` URLs are detected automatically by the `wordpress` type)
+# Custom post types use the post type slug here (e.g. `product`, not `products`)
+npx @11ty/import wordpress-hosted https://example.com --posttypes=posts,pages,product
 ```
 
 #### Atom Feeds

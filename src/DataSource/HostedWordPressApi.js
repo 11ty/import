@@ -3,6 +3,10 @@ import { DataSource } from "../DataSource.js";
 export class HostedWordPressApi extends DataSource {
 	static TYPE = "wordpressapi-hosted";
 	static TYPE_FRIENDLY = "WordPress.com";
+	static DEFAULT_POST_TYPES = ["posts", "pages"];
+
+	#postTypes = HostedWordPressApi.DEFAULT_POST_TYPES;
+	#postType = "post";
 
 	static #getHostname(url) {
 		try {
@@ -21,11 +25,39 @@ export class HostedWordPressApi extends DataSource {
 		super();
 		this.url = url;
 
-		if(!HostedWordPressApi.isValid(url)) {
-			throw new Error("HostedWordPressApi expects a .wordpress.com URL, if you’re looking to use a self-hosted WordPress API please use the `wordpress` type (`WordPressApi` class).");
+		// Custom domains are supported when using this class (or the `wordpress-hosted` type) directly
+		this.hostname = HostedWordPressApi.#getHostname(url);
+		if(!this.hostname) {
+			throw new Error(`HostedWordPressApi expects a URL, received: ${url}`);
+		}
+	}
+
+	// Accepts post type slugs (`page`, `product`) or the built-in REST bases (`posts`, `pages`)
+	setPostTypes(types) {
+		if(typeof types === "string") {
+			types = types.split(",");
 		}
 
-		this.hostname = HostedWordPressApi.#getHostname(url);
+		types = (types || []).map(type => type.trim()).filter(Boolean);
+		this.#postTypes = types.length ? types : HostedWordPressApi.DEFAULT_POST_TYPES;
+	}
+
+	getPostTypes() {
+		return this.#postTypes;
+	}
+
+	#getPostTypeSlugs() {
+		let builtins = { posts: "post", pages: "page" };
+		return Array.from(new Set(this.#postTypes.map(type => builtins[type] || type)));
+	}
+
+	async getEntries() {
+		let entries = [];
+		for(let postType of this.#getPostTypeSlugs()) {
+			this.#postType = postType;
+			entries.push(...await super.getEntries());
+		}
+		return entries;
 	}
 
 	getType() {
@@ -36,7 +68,7 @@ export class HostedWordPressApi extends DataSource {
 		// return function for paging
 		return (pageNumber = 1) => {
 			// DRAFTS NOT SUPPORTED
-			return `https://public-api.wordpress.com/rest/v1.1/sites/${this.hostname}/posts/?page=${pageNumber}&per_page=100`;
+			return `https://public-api.wordpress.com/rest/v1.1/sites/${this.hostname}/posts/?type=${encodeURIComponent(this.#postType)}&page=${pageNumber}&number=100`;
 		};
 	}
 
@@ -76,8 +108,9 @@ export class HostedWordPressApi extends DataSource {
 
 	async cleanEntry(rawEntry, data) {
 		let metadata = {
-			categories: Object.keys(rawEntry.categories),
-			tags: Object.keys(rawEntry.tags),
+			// Pages and custom post types may not support categories or tags
+			categories: Object.keys(rawEntry.categories || {}),
+			tags: Object.keys(rawEntry.tags || {}),
 		};
 
 		if(rawEntry.ID) {
@@ -85,6 +118,10 @@ export class HostedWordPressApi extends DataSource {
 		}
 		if(rawEntry.slug) {
 			metadata.slug = rawEntry.slug;
+		}
+
+		if(rawEntry.type) {
+			metadata.postType = rawEntry.type;
 		}
 
 		if(rawEntry.featured_image) {

@@ -292,6 +292,58 @@ test("WordPress pages and custom post types, issue #17", async (t) => {
 	assert.equal(entries[2].content, "");
 });
 
+test("Hosted WordPress with a custom domain and post types, issue #16", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("wordpress-hosted", {
+		url: "https://example.com/",
+		postTypes: "posts,pages",
+	});
+
+	let post = {
+		ID: 1,
+		guid: "https://example.com/?p=1",
+		URL: "https://example.com/2025/06/hello/",
+		type: "post",
+		slug: "hello",
+		title: "Hello",
+		content: "<p>Hello</p>",
+		date: "2025-06-11T00:00:00+00:00",
+		modified: "2025-06-11T00:00:00+00:00",
+		status: "publish",
+		author: { name: "Zach", profile_URL: "https://example.com/zach", avatar_URL: "" },
+		categories: { News: {} },
+		tags: {},
+	};
+	let page = {
+		...post,
+		ID: 2,
+		guid: "https://example.com/?page_id=2",
+		URL: "https://example.com/about/",
+		type: "page",
+		slug: "about",
+		title: "About",
+		categories: undefined,
+		tags: undefined,
+	};
+
+	let getUrl = (type, pageNumber) => `https://public-api.wordpress.com/rest/v1.1/sites/example.com/posts/?type=${type}&page=${pageNumber}&number=100`;
+	importer.addDataOverride("wordpressapi-hosted", getUrl("post", 1), { posts: [post] });
+	importer.addDataOverride("wordpressapi-hosted", getUrl("post", 2), { posts: [] });
+	importer.addDataOverride("wordpressapi-hosted", getUrl("page", 1), { posts: [page] });
+	importer.addDataOverride("wordpressapi-hosted", getUrl("page", 2), { posts: [] });
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.deepEqual(entries.map(entry => entry.metadata.postType), ["post", "page"]);
+	assert.deepEqual(entries.map(entry => entry.title), ["Hello", "About"]);
+	assert.deepEqual(entries[0].metadata.categories, ["News"]);
+	assert.deepEqual(entries[1].metadata.categories, []);
+});
+
 test("postTypes is not supported by other source types", async (t) => {
 	let importer = new Importer();
 
