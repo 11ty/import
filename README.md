@@ -75,6 +75,7 @@ npx @11ty/import [type] [target] --persist=github:zachleat/wp-awesome
 - `atom` (URL)
 - `bluesky` (username)
 - `fediverse` (username)
+- `jsonfeed` (URL)
 - `rss` (URL)
 - `squarespace` (collection, post, or page URL, e.g. a blog home page)
 - `wordpress` (blog home page URL, discovers the site’s own REST API or falls back to the WordPress.com API)
@@ -117,6 +118,13 @@ npx @11ty/import squarespace https://engineering.squarespace.com/blog
 npx @11ty/import squarespace https://engineering.squarespace.com/about
 ```
 
+#### JSON Feed
+
+```sh
+# Import JSON Feed posts (follows `next_url` paging)
+npx @11ty/import jsonfeed https://www.manton.org/feed.json
+```
+
 #### Atom Feeds
 
 ```sh
@@ -148,6 +156,40 @@ npx @11ty/import fediverse eleventy@fosstodon.org
 npx @11ty/import bluesky @11ty.dev
 ```
 
+#### Experimental
+
+- `blogger` (blog URL, custom domains too)
+- `devto` (DEV username or organization)
+- `ghost` (site URL)
+- `medium` (extracted Medium export folder path)
+- `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
+- `twitter` (Twitter/X archive `.zip` file or extracted folder path)
+
+```sh
+# Import all posts (paid posts are previews unless a subscriber’s `substack.sid` cookie value is supplied in a SUBSTACK_SID environment variable)
+npx @11ty/import substack https://www.lennysnewsletter.com
+npx @11ty/import substack example
+
+# Import all posts and pages from the Content API
+# The public key is found on the site (from Ghost’s built-in search) or supplied in a GHOST_CONTENT_API_KEY environment variable
+npx @11ty/import ghost https://www.404media.co
+
+# Import all posts and pages
+npx @11ty/import blogger https://blog.chromium.org
+
+# Import all published articles for a user or organization
+npx @11ty/import devto ben
+
+# Import posts and drafts from an extracted Medium export (Settings → Security and apps → Download your information)
+npx @11ty/import medium ./medium-export
+
+# Recent posts are also available via RSS
+npx @11ty/import rss https://medium.com/feed/@zachleat
+
+# Import tweets and threads (not retweets or replies to others) with media from your archive (Settings → Your account → Download an archive of your data)
+npx @11ty/import twitter ./twitter-2026-01-01.zip
+```
+
 ### Comments
 
 Comments are imported by default to a [template data file](https://www.11ty.dev/docs/data-template-dir/) next to each post (e.g. `my-post.md` and `my-post.json`) with a `comments` array. Each comment has `id`, `parentId` (`0` for top-level), `url`, `author` (`name`, `url`, `avatarUrl`), `date`, and HTML `content`.
@@ -156,6 +198,10 @@ Comments with content warnings or from authors that opted out of wider distribut
 
 - `wordpress`, `wordpressxml`: approved comments (no commenter emails or IP addresses)
 - `squarespace`: approved comments on collection items (commenter names only)
+- `substack`: comments on posts you can read
+- `ghost`: native Ghost comments (commenter names and avatars)
+- `blogger`: published comments
+- `devto`: comments (deleted and hidden comments are skipped)
 - `youtubeuser`: requires a `YOUTUBE_API_KEY` environment variable ([YouTube Data API](https://developers.google.com/youtube/v3/getting-started))
 - `bluesky`: replies (private when labeled or the author discourages showing their account to logged-out users)
 - `fediverse`: public and unlisted replies known to the user’s server (private when unlisted, marked sensitive, or the author opted out of search engine indexing)

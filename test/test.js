@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createRequire } from "node:module";
 
 import { Importer } from "../src/Importer.js";
@@ -11,6 +13,7 @@ import { HtmlTransformer } from "../src/HtmlTransformer.js";
 import { MarkdownToHtml } from "../src/MarkdownToHtml.js";
 import { WordPressApi } from "../src/DataSource/WordPressApi.js";
 import { Squarespace } from "../src/DataSource/Squarespace.js";
+import { Archive } from "../src/Archive.js";
 
 function cleanContent(content) {
 	// trim extra whitespace (dirty workaround for trailing whitespace)
@@ -1816,4 +1819,460 @@ test("Squarespace comments", async (t) => {
 		{ id: "c3", parentId: 0, author: { name: "Author c3" }, date: new Date(1700000004000), content: "<p>Comment c3</p>" },
 	]);
 	assert.equal(second.comments, undefined);
+});
+
+// Folder fixture is extracted from the zip (`node --test` would run its `.js` files)
+const TWITTER_ZIP = "./test/sources/twitter-archive.zip";
+const TWITTER_FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-twitter-"));
+let twitterZip = await Archive.open(TWITTER_ZIP);
+for(let file of await twitterZip.list()) {
+	let target = path.join(TWITTER_FOLDER, file);
+	fs.mkdirSync(path.dirname(target), { recursive: true });
+	fs.writeFileSync(target, await twitterZip.read(file));
+}
+
+for(let archivePath of [TWITTER_FOLDER, TWITTER_ZIP]) {
+	test(`Twitter archive (${archivePath})`, async (t) => {
+		let importer = new Importer();
+		importer.setVerbose(false);
+		importer.setDryRun(true);
+		importer.setAssetReferenceType("disabled");
+
+		importer.addSource("twitter", archivePath);
+
+		let entries = await importer.getEntries({ contentType: "markdown" });
+		// Retweets and replies to others are skipped
+		assert.deepEqual(entries.map(entry => entry.metadata.id), ["2006", "2003", "2002", "2001"]);
+
+		let [part1, reply, media, text] = entries;
+		assert.equal(part1.filePath, "zachleat/2006.md");
+		assert.equal(part1.content, "From the second part");
+
+		assert.equal(reply.metadata.inReplyTo, "https://x.com/zachleat/status/2002");
+		assert.equal(reply.content, "Continuing the thread");
+
+		assert.equal(text.uuid, "11ty/import::twitter::2001");
+		assert.equal(text.type, "twitter");
+		assert.equal(text.url, "https://x.com/zachleat/status/2001");
+		assert.deepEqual(text.date, new Date("2018-10-10T20:19:24.000Z"));
+		assert.deepEqual(text.authors, [{ name: "Zach Leatherman", url: "https://x.com/zachleat", avatarUrl: "https://pbs.twimg.com/profile_images/1/avatar.jpg" }]);
+		assert.equal(text.content, `Eleventy & friends with [@eleven\\_ty](https://x.com/eleven_ty) and @nobody, read [11ty.dev/docs/?a=1&b=2](https://www.11ty.dev/docs/?a=1&b=2) (email me@zachleat)`);
+
+		assert.equal(media.content, [
+			`A photo and a video  `,
+			`Second line`,
+			``,
+			`![A &quot;photo&quot;](https://pbs.twimg.com/media/Photo1.jpg)`,
+			``,
+			// Archived video variant is preferred over the highest bitrate
+			`<video controls="" src="https://video.twimg.com/ext_tw_video/3/pu/vid/640x360/Small.mp4?tag=10" poster="https://pbs.twimg.com/ext_tw_video_thumb/3/pu/img/Poster.jpg"></video>`,
+		].join("\n"));
+	});
+
+	test(`Twitter archive local media (${archivePath})`, async (t) => {
+		let importer = new Importer();
+		importer.setVerbose(false);
+		importer.setDryRun(true);
+		importer.setAssetReferenceType("relative");
+
+		importer.addSource("twitter", archivePath);
+
+		let [source] = importer.getSources();
+		let [entry] = await source.getEntries();
+
+		assert.deepEqual(await source.getLocalAsset("https://pbs.twimg.com/media/Photo1.jpg"), { body: Buffer.from("photo-bytes") });
+		assert.equal(await source.getLocalAsset("https://pbs.twimg.com/media/Missing.jpg"), undefined);
+
+		// Copied from the archive instead of fetched
+		assert.match(await importer.fetcher.fetchAsset("https://pbs.twimg.com/media/Photo1.jpg", entry), /^assets\/Photo1-\w+\.jpg$/);
+		assert.match(await importer.fetcher.fetchAsset("https://video.twimg.com/ext_tw_video/3/pu/vid/640x360/Small.mp4?tag=10", entry), /^assets\/Small-\w+\.mp4$/);
+		assert.match(await importer.fetcher.fetchAsset("https://pbs.twimg.com/profile_images/1/avatar.jpg", entry), /^assets\/avatar-\w+\.jpg$/);
+	});
+}
+
+function getImporter() {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+	return importer;
+}
+
+test("Substack", async (t) => {
+	let importer = getImporter();
+	importer.addSource("substack", "example");
+
+	let archivePost = (id, slug, extra = {}) => ({ id, slug, post_date: "2026-10-01T12:00:00.000Z", comment_count: 0, ...extra });
+	importer.addDataOverride("substack", "https://example.substack.com/api/v1/archive?sort=new&offset=0&limit=25", [
+		archivePost(1, "first", { comment_count: 2 }),
+		archivePost(2, "paid"),
+	]);
+	// Shorter pages are offset by the number of posts returned
+	importer.addDataOverride("substack", "https://example.substack.com/api/v1/archive?sort=new&offset=2&limit=25", []);
+
+	importer.addDataOverride("substack", "https://example.substack.com/api/v1/posts/first", {
+		id: 1,
+		slug: "first",
+		type: "newsletter",
+		audience: "everyone",
+		title: "First &amp; best",
+		subtitle: "A subtitle",
+		canonical_url: "https://example.substack.com/p/first",
+		post_date: "2026-10-01T12:00:00.000Z",
+		updated_at: "2026-10-02T12:00:00.000Z",
+		cover_image: "https://substack-post-media.s3.amazonaws.com/cover.png",
+		postTags: [{ name: "Career" }],
+		publishedBylines: [{ name: "Jane", handle: "jane", photo_url: "https://substackcdn.com/jane.png" }],
+		body_html: `<p>Hello <a href="https://example.substack.com/p/paid">world</a>.</p>`,
+		comment_count: 2,
+	});
+	importer.addDataOverride("substack", "https://example.substack.com/api/v1/posts/paid", {
+		id: 2,
+		slug: "paid",
+		type: "podcast",
+		audience: "only_paid",
+		title: "Paid",
+		canonical_url: "https://example.substack.com/p/paid",
+		post_date: "2026-09-01T12:00:00.000Z",
+		podcast_url: "https://api.substack.com/episode.mp3",
+		body_html: "<p>Preview</p>",
+	});
+	importer.addDataOverride("substack", "https://example.substack.com/api/v1/post/1/comments?all_comments=true&sort=oldest_first", {
+		comments: [{
+			id: 10, ancestor_path: "", status: "published", deleted: false, name: "Commenter", handle: "commenter", date: "2026-10-01T13:00:00.000Z", body: "Nice\npost",
+			children: [
+				{ id: 11, ancestor_path: "10", status: "published", deleted: false, name: "Jane", date: "2026-10-01T14:00:00.000Z", body: "Thanks", children: [] },
+				{ id: 12, ancestor_path: "10", status: "published", deleted: true, date: "2026-10-01T15:00:00.000Z", body: null, children: [] },
+			],
+		}],
+	});
+
+	let [post, paid] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(post.uuid, "11ty/import::substack::1");
+	assert.equal(post.title, "First & best");
+	assert.equal(post.url, "https://example.substack.com/p/first");
+	assert.equal(post.filePath, "p/first.md");
+	assert.equal(post.description, "A subtitle");
+	assert.deepEqual(post.dateUpdated, new Date("2026-10-02T12:00:00.000Z"));
+	assert.deepEqual(post.authors, [{ name: "Jane", url: "https://substack.com/@jane", avatarUrl: "https://substackcdn.com/jane.png" }]);
+	assert.deepEqual(post.tags, ["Career"]);
+	assert.deepEqual(post.metadata, {
+		id: 1,
+		slug: "first",
+		postType: "newsletter",
+		media: { featuredImage: "https://substack-post-media.s3.amazonaws.com/cover.png" },
+		tags: ["Career"],
+	});
+	// Links to the publication are root-relative
+	assert.equal(post.content, "Hello [world](/p/paid).");
+	assert.deepEqual(post.comments, [
+		{ id: 10, parentId: 0, url: "https://example.substack.com/p/first/comment/10", author: { name: "Commenter", url: "https://substack.com/@commenter" }, date: new Date("2026-10-01T13:00:00.000Z"), content: "Nice<br>\npost" },
+		{ id: 11, parentId: 10, url: "https://example.substack.com/p/first/comment/11", author: { name: "Jane" }, date: new Date("2026-10-01T14:00:00.000Z"), content: "Thanks" },
+	]);
+
+	assert.equal(paid.metadata.audience, "only_paid");
+	assert.equal(paid.metadata.postType, "podcast");
+	assert.equal(paid.content, `Preview\n\n<audio controls="" src="https://api.substack.com/episode.mp3"></audio>`);
+	assert.equal(paid.comments, undefined);
+});
+
+test("Ghost", async (t) => {
+	let importer = getImporter();
+	importer.addSource("ghost", "https://example.com/");
+
+	// Key is discovered from the search script
+	importer.addDataOverride("ghost", "https://example.com/", `<script src="https://cdn.jsdelivr.net/sodo-search.min.js" data-key="abc123" data-api="https://example.ghost.io/ghost/api/content/"></script>`);
+
+	let api = "https://example.ghost.io/ghost/api/content/";
+	let query = "&include=tags,authors&formats=html";
+	let post = (id, extra = {}) => ({
+		id,
+		slug: `post-${id}`,
+		title: `Post ${id}`,
+		url: `https://example.com/post-${id}/`,
+		html: `<p>Post ${id}</p>`,
+		visibility: "public",
+		published_at: "2026-10-01T12:00:00.000-04:00",
+		updated_at: "2026-10-02T12:00:00.000-04:00",
+		tags: [],
+		authors: [],
+		...extra,
+	});
+
+	importer.addDataOverride("ghost", `${api}posts/?key=abc123&limit=100&page=1${query}`, {
+		posts: [post("a", {
+			feature_image: "https://example.com/content/images/feature.jpg",
+			custom_excerpt: "An excerpt",
+			visibility: "paid",
+			tags: [{ name: "News", visibility: "public" }, { name: "#internal", visibility: "internal" }],
+			authors: [{ name: "Jane", url: "https://example.com/author/jane/", profile_image: "https://example.com/content/images/jane.jpg" }],
+		})],
+		meta: { pagination: { next: 2 } },
+	});
+	importer.addDataOverride("ghost", `${api}posts/?key=abc123&limit=100&page=2${query}`, {
+		posts: [post("b", { published_at: "2026-09-01T12:00:00.000-04:00", meta_description: "Meta description" })],
+		meta: { pagination: { next: null } },
+	});
+	importer.addDataOverride("ghost", `${api}pages/?key=abc123&limit=100&page=1${query}`, {
+		pages: [post("about", { published_at: "2026-01-01T12:00:00.000-04:00" })],
+		meta: { pagination: { next: null } },
+	});
+
+	importer.addDataOverride("ghost", "https://example.com/members/api/comments/counts/?ids=a,b,about", { a: 3, b: 0, about: 0 });
+	let comment = (id, extra = {}) => ({ id, status: "published", html: `<p>${id}</p>`, created_at: "2026-10-01T18:00:00.000Z", member: { name: `Member ${id}`, avatar_image: null }, replies: [], count: { replies: 0 }, ...extra });
+	importer.addDataOverride("ghost", "https://example.com/members/api/comments/post/a/?limit=100&page=1&order=created_at%20asc", {
+		// Threads only include some replies
+		comments: [comment("c1", { replies: [comment("r1", { parent_id: "c1" })], count: { replies: 2 } })],
+		meta: { pagination: { next: null } },
+	});
+	importer.addDataOverride("ghost", "https://example.com/members/api/comments/c1/replies/?limit=100&page=1&order=created_at%20asc", {
+		comments: [
+			comment("r1", { parent_id: "c1", created_at: "2026-10-01T19:00:00.000Z" }),
+			comment("r2", { parent_id: "c1", in_reply_to_id: "r1", created_at: "2026-10-01T20:00:00.000Z" }),
+		],
+		meta: { pagination: { next: null } },
+	});
+
+	let [a, b, about] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(a.uuid, "11ty/import::ghost::a");
+	assert.equal(a.filePath, "post-a.md");
+	assert.equal(a.description, "An excerpt");
+	assert.deepEqual(a.tags, ["News"]);
+	assert.deepEqual(a.authors, [{ name: "Jane", url: "/author/jane/", avatarUrl: "https://example.com/content/images/jane.jpg" }]);
+	assert.deepEqual(a.metadata, {
+		id: "a",
+		slug: "post-a",
+		postType: "post",
+		visibility: "paid",
+		media: { featuredImage: "https://example.com/content/images/feature.jpg" },
+		tags: ["News"],
+	});
+	assert.deepEqual(a.comments.map(({ id, parentId }) => ({ id, parentId })), [
+		{ id: "c1", parentId: 0 },
+		{ id: "r1", parentId: "c1" },
+		{ id: "r2", parentId: "r1" },
+	]);
+
+	assert.equal(b.description, "Meta description");
+	assert.equal(b.comments, undefined);
+
+	assert.equal(about.metadata.postType, "page");
+	assert.equal(about.content, "Post about");
+});
+
+test("Ghost requires a Content API key", async (t) => {
+	let importer = getImporter();
+	importer.addSource("ghost", "https://example.com/");
+	importer.addDataOverride("ghost", "https://example.com/", "<html></html>");
+
+	await assert.rejects(importer.getEntries(), /GHOST_CONTENT_API_KEY/);
+});
+
+test("JSON Feed", async (t) => {
+	let importer = getImporter();
+	importer.addSource("jsonfeed", "https://example.com/feed.json");
+
+	importer.addDataOverride("jsonfeed", "https://example.com/feed.json", {
+		version: "https://jsonfeed.org/version/1.1",
+		title: "Example",
+		authors: [{ name: "Feed Author", url: "https://example.com/" }],
+		next_url: "https://example.com/feed.json?page=2",
+		items: [{
+			id: "1",
+			url: "https://example.com/posts/one/",
+			title: "One",
+			content_html: "<p>Hello <em>world</em></p>",
+			summary: "A summary",
+			image: "https://example.com/one.jpg",
+			date_published: "2026-10-01T12:00:00Z",
+			date_modified: "2026-10-02T12:00:00Z",
+			tags: ["web"],
+			authors: [{ name: "Jane", url: "https://jane.example/", avatar: "https://jane.example/avatar.png" }],
+			attachments: [{ url: "https://example.com/one.mp3", mime_type: "audio/mpeg" }],
+		}],
+	});
+	importer.addDataOverride("jsonfeed", "https://example.com/feed.json?page=2", {
+		version: "https://jsonfeed.org/version/1",
+		author: { name: "Feed Author", url: "https://example.com/" },
+		items: [{
+			id: "2",
+			url: "https://example.com/posts/two/",
+			content_text: "Plain text",
+			date_published: "2026-09-01T12:00:00Z",
+		}],
+	});
+
+	let [one, two] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(one.uuid, "11ty/import::jsonfeed::1");
+	assert.equal(one.filePath, "posts/one.md");
+	assert.equal(one.description, "A summary");
+	assert.deepEqual(one.tags, ["web"]);
+	assert.deepEqual(one.dateUpdated, new Date("2026-10-02T12:00:00Z"));
+	assert.deepEqual(one.authors, [{ name: "Jane", url: "https://jane.example/", avatarUrl: "https://jane.example/avatar.png" }]);
+	assert.deepEqual(one.metadata, { media: { featuredImage: "https://example.com/one.jpg" } });
+	assert.equal(one.content, `Hello _world_\n\n<audio controls="" src="https://example.com/one.mp3"></audio>`);
+
+	assert.equal(two.contentType, "text");
+	assert.equal(two.content, "Plain text");
+	// Feed `author` (1.0) is the fallback
+	assert.deepEqual(two.authors, [{ name: "Feed Author", url: "https://example.com/" }]);
+});
+
+test("Blogger", async (t) => {
+	let importer = getImporter();
+	importer.addSource("blogger", "https://example.blogspot.com/");
+
+	let entry = (id, extra = {}) => ({
+		id: { $t: `tag:blogger.com,1999:blog-1.post-${id}` },
+		published: { $t: "2026-10-01T12:00:00.000-07:00" },
+		updated: { $t: "2026-10-02T12:00:00.000-07:00" },
+		title: { type: "text", $t: `Post ${id}` },
+		content: { type: "html", $t: `<p>Post ${id}</p>` },
+		link: [{ rel: "alternate", type: "text/html", href: `https://example.blogspot.com/2026/10/post-${id}.html` }],
+		author: [{ name: { $t: "Unknown" }, gd$image: { src: "https://img1.blogblog.com/img/b16-rounded.gif" } }],
+		...extra,
+	});
+
+	importer.addDataOverride("blogger", "https://example.blogspot.com/feeds/posts/default?alt=json&max-results=150&start-index=1", {
+		feed: {
+			openSearch$totalResults: { $t: "1" },
+			entry: [entry("100", {
+				category: [{ term: "news" }],
+				media$thumbnail: { url: "https://blogger.googleusercontent.com/img/b/abc/s72-c/photo.jpg" },
+				thr$total: { $t: "2" },
+				link: [
+					{ rel: "replies", type: "application/atom+xml", href: "https://example.blogspot.com/feeds/100/comments/default" },
+					{ rel: "alternate", type: "text/html", href: "https://example.blogspot.com/2026/10/post-100.html" },
+				],
+				author: [{ name: { $t: "Jane" }, uri: { $t: "https://www.blogger.com/profile/1" }, gd$image: { src: "//blogger.googleusercontent.com/jane.png" } }],
+			})],
+		},
+	});
+	importer.addDataOverride("blogger", "https://example.blogspot.com/feeds/pages/default?alt=json&max-results=150&start-index=1", {
+		feed: {
+			openSearch$totalResults: { $t: "1" },
+			entry: [entry("200", { published: { $t: "2026-01-01T12:00:00.000-07:00" } })],
+		},
+	});
+	importer.addDataOverride("blogger", "https://example.blogspot.com/feeds/100/comments/default?alt=json&max-results=150&start-index=1", {
+		feed: {
+			openSearch$totalResults: { $t: "2" },
+			entry: [
+				entry("301", {
+					published: { $t: "2026-10-01T14:00:00.000-07:00" },
+					content: { type: "html", $t: "Reply" },
+					link: [
+						{ rel: "alternate", type: "text/html", href: "https://example.blogspot.com/2026/10/post-100.html?showComment=2#c301" },
+						{ rel: "related", type: "application/atom+xml", href: "https://www.blogger.com/feeds/1/100/comments/default/300" },
+					],
+				}),
+				entry("300", {
+					published: { $t: "2026-10-01T13:00:00.000-07:00" },
+					content: { type: "html", $t: "Comment" },
+					link: [{ rel: "alternate", type: "text/html", href: "https://example.blogspot.com/2026/10/post-100.html?showComment=1#c300" }],
+				}),
+			],
+		},
+	});
+
+	let [post, page] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(post.uuid, "11ty/import::blogger::100");
+	assert.equal(post.url, "https://example.blogspot.com/2026/10/post-100.html");
+	assert.equal(post.filePath, "2026/10/post-100.md");
+	assert.deepEqual(post.tags, ["news"]);
+	assert.deepEqual(post.authors, [{ name: "Jane", url: "https://www.blogger.com/profile/1", avatarUrl: "https://blogger.googleusercontent.com/jane.png" }]);
+	assert.deepEqual(post.metadata, {
+		id: "100",
+		postType: "post",
+		media: { featuredImage: "https://blogger.googleusercontent.com/img/b/abc/s1600/photo.jpg" },
+		tags: ["news"],
+	});
+	assert.deepEqual(post.comments, [
+		{ id: "300", parentId: 0, url: "https://example.blogspot.com/2026/10/post-100.html?showComment=1#c300", author: { name: "Unknown" }, date: new Date("2026-10-01T20:00:00.000Z"), content: "Comment" },
+		{ id: "301", parentId: "300", url: "https://example.blogspot.com/2026/10/post-100.html?showComment=2#c301", author: { name: "Unknown" }, date: new Date("2026-10-01T21:00:00.000Z"), content: "Reply" },
+	]);
+
+	assert.equal(page.metadata.postType, "page");
+	assert.deepEqual(page.authors, [{ name: "Unknown" }]);
+	assert.equal(page.comments, undefined);
+});
+
+test("DEV", async (t) => {
+	let importer = getImporter();
+	importer.addSource("devto", "@jane");
+
+	let user = { name: "Jane", username: "jane", profile_image: "https://media2.dev.to/jane.png", profile_image_90: "https://media2.dev.to/jane-90.png" };
+	importer.addDataOverride("devto", "https://dev.to/api/articles?username=jane&per_page=100&page=1", [
+		{ id: 1, comments_count: 1, published_at: "2026-10-01T12:00:00Z" },
+	]);
+	importer.addDataOverride("devto", "https://dev.to/api/articles?username=jane&per_page=100&page=2", []);
+	importer.addDataOverride("devto", "https://dev.to/api/articles/1", {
+		id: 1,
+		slug: "hello-1abc",
+		title: "Hello",
+		description: "A description",
+		url: "https://dev.to/jane/hello-1abc",
+		canonical_url: "https://jane.example/hello/",
+		cover_image: "https://media2.dev.to/cover.png",
+		published_at: "2026-10-01T12:00:00Z",
+		edited_at: "2026-10-03T12:00:00Z",
+		// Article details have a string `tag_list` and an array of `tags`
+		tag_list: "webdev, css",
+		tags: ["webdev", "css"],
+		body_html: `<p>Hello <a href="https://dev.to/jane/other">other</a></p>`,
+		user,
+	});
+	importer.addDataOverride("devto", "https://dev.to/api/comments?a_id=1", [{
+		id_code: "c1", created_at: "2026-10-01T13:00:00Z", body_html: "<p>Comment</p>", user,
+		children: [
+			{ id_code: "c2", created_at: "2026-10-01T14:00:00Z", body_html: "<p>Reply</p>", user, children: [] },
+			{ id_code: "c3", created_at: "2026-10-01T15:00:00Z", body_html: "<p>[deleted]</p>", children: [] },
+		],
+	}]);
+
+	let [post] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(post.uuid, "11ty/import::devto::1");
+	assert.equal(post.filePath, "jane/hello-1abc.md");
+	assert.equal(post.description, "A description");
+	assert.deepEqual(post.dateUpdated, new Date("2026-10-03T12:00:00Z"));
+	assert.deepEqual(post.tags, ["webdev", "css"]);
+	assert.deepEqual(post.authors, [{ name: "Jane", url: "https://dev.to/jane", avatarUrl: "https://media2.dev.to/jane.png" }]);
+	assert.deepEqual(post.metadata, {
+		id: 1,
+		slug: "hello-1abc",
+		media: { featuredImage: "https://media2.dev.to/cover.png" },
+		canonicalUrl: "https://jane.example/hello/",
+		tags: ["webdev", "css"],
+	});
+	// Links to DEV stay absolute
+	assert.equal(post.content, "Hello [other](https://dev.to/jane/other)");
+	assert.deepEqual(post.comments.map(({ id, parentId, author }) => ({ id, parentId, avatarUrl: author.avatarUrl })), [
+		{ id: "c1", parentId: 0, avatarUrl: "https://media2.dev.to/jane-90.png" },
+		{ id: "c2", parentId: "c1", avatarUrl: "https://media2.dev.to/jane-90.png" },
+	]);
+});
+
+test("Medium export", async (t) => {
+	let importer = getImporter();
+	importer.addSource("medium", "./test/sources/medium");
+
+	let [post, draft] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(post.uuid, "11ty/import::medium::0123456789ab");
+	assert.equal(post.title, "Hello & World");
+	assert.equal(post.description, "A subtitle & more");
+	assert.equal(post.url, "https://medium.com/@zachleat/hello-world-0123456789ab");
+	assert.equal(post.filePath, "@zachleat/hello-world-0123456789ab.md");
+	assert.equal(post.status, "publish");
+	assert.deepEqual(post.date, new Date("2024-01-15T18:30:00.000Z"));
+	assert.deepEqual(post.authors, [{ name: "Zach Leatherman", url: "https://medium.com/@zachleat" }]);
+	assert.deepEqual(post.metadata, { id: "0123456789ab" });
+	// The title and subtitle repeated in the body are removed
+	assert.equal(post.content, "* * *\n\nFirst **paragraph**.\n\n![](https://cdn-images-1.medium.com/max/800/1*abc.png)");
+
+	assert.equal(draft.uuid, "11ty/import::medium::ba9876543210");
+	assert.equal(draft.status, "draft");
+	assert.equal(draft.url, "https://medium.com/p/ba9876543210");
+	assert.equal(draft.filePath, "drafts/p/ba9876543210.md");
+	assert.deepEqual(draft.authors, []);
+	assert.equal(draft.content, "Draft text.");
 });

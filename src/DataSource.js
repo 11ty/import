@@ -329,6 +329,9 @@ class DataSource {
 	// Site root for whole-site imports, enables rewriting links to the site as root-relative
 	getSiteUrl() {}
 
+	// Asset contents from a local export (e.g. a `.zip` file) instead of fetching the URL: `{ body, contentType }`
+	async getLocalAsset(url) {}
+
 	// Linked files (not just embedded assets) to download, receives a URL object
 	isLinkedAsset(url) {
 		return false;

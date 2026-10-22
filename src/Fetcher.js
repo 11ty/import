@@ -170,16 +170,20 @@ class Fetcher {
 			}
 		}
 
+		let localAsset = await contextEntry.source?.getLocalAsset(assetUrl);
+
 		// TODO move this upstream as a Fetch `alias` feature.
-		return this.fetch(assetUrl, {
+		let request = localAsset ? Promise.resolve(localAsset) : this.fetch(assetUrl, {
 			type: "buffer",
 			returnType: "response",
 		},
 		{
 			verbose: true,
 			showErrors: true,
-		}).then(result => {
-			let { url: urlValue, filePath: fullOutputLocation } = this.getAssetLocation(assetUrl, result.headers?.["content-type"], contextEntry);
+		}).then(result => ({ body: result.body, contentType: result.headers?.["content-type"] }));
+
+		return request.then(result => {
+			let { url: urlValue, filePath: fullOutputLocation } = this.getAssetLocation(assetUrl, result.contentType, contextEntry);
 
 			if(this.writtenAssetFiles.has(fullOutputLocation)) {
 				return urlValue;

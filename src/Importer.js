@@ -22,6 +22,13 @@ import { WordPressXml } from "./DataSource/WordPressXml.js";
 import { BlueskyUser } from "./DataSource/BlueskyUser.js";
 import { FediverseUser } from "./DataSource/FediverseUser.js";
 import { Squarespace } from "./DataSource/Squarespace.js";
+import { Twitter } from "./DataSource/Twitter.js";
+import { Substack } from "./DataSource/Substack.js";
+import { Ghost } from "./DataSource/Ghost.js";
+import { JsonFeed } from "./DataSource/JsonFeed.js";
+import { Blogger } from "./DataSource/Blogger.js";
+import { DevTo } from "./DataSource/DevTo.js";
+import { MediumExport } from "./DataSource/MediumExport.js";
 
 import pkg from "../package.json" with { type: "json" };
 
@@ -190,6 +197,20 @@ class Importer {
 				cls = FediverseUser; // RSS
 			} else if(type === "squarespace") {
 				cls = Squarespace;
+			} else if(type === "twitter") {
+				cls = Twitter;
+			} else if(type === "substack") {
+				cls = Substack;
+			} else if(type === "ghost") {
+				cls = Ghost;
+			} else if(type === "jsonfeed") {
+				cls = JsonFeed;
+			} else if(type === "blogger") {
+				cls = Blogger;
+			} else if(type === "devto") {
+				cls = DevTo;
+			} else if(type === "medium") {
+				cls = MediumExport;
 			}
 		} else if(typeof type === "function") {
 			cls = type;
