@@ -1564,19 +1564,31 @@ test("Bluesky replies", async (t) => {
 
 test("Fediverse replies", async (t) => {
 	let importer = getCommentsImporter("fediverse", "@eleventy@fosstodon.org");
-	importer.addDataOverride("fediverse", "https://fosstodon.org/users/eleventy.rss", Fetcher.parseXml(`<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
-	<channel>
-		<title>Eleventy</title>
-		<link>https://fosstodon.org/@eleventy</link>
-		<item>
-			<guid isPermaLink="true">https://fosstodon.org/@eleventy/111</guid>
-			<link>https://fosstodon.org/@eleventy/111</link>
-			<pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate>
-			<description>&lt;p&gt;Hello&lt;/p&gt;</description>
-		</item>
-	</channel>
-</rss>`));
+	let account = { id: "1", acct: "eleventy", display_name: "Eleventy", url: "https://fosstodon.org/@eleventy" };
+	let statusesUrl = "https://fosstodon.org/api/v1/accounts/1/statuses?limit=40&exclude_replies=true&exclude_reblogs=true";
+	importer.addDataOverride("fediverse", "https://fosstodon.org/api/v1/accounts/lookup?acct=eleventy", account);
+	importer.addDataOverride("fediverse", statusesUrl, [{
+		id: "111",
+		created_at: "2024-01-01T00:00:00.000Z",
+		edited_at: "2024-01-01T01:00:00.000Z",
+		url: "https://fosstodon.org/@eleventy/111",
+		content: "<p>Hello</p>",
+		media_attachments: [
+			{ type: "image", url: "https://files.example/a.png", description: "Alt" },
+			{ type: "gifv", url: "https://files.example/b.mp4", preview_url: "https://files.example/b.png" },
+		],
+		account,
+	}]);
+	importer.addDataOverride("fediverse", `${statusesUrl}&max_id=111`, [{
+		id: "100",
+		created_at: "2023-12-31T00:00:00.000Z",
+		url: "https://fosstodon.org/@eleventy/100",
+		content: "<p>Older</p>",
+		media_attachments: [],
+		account,
+	}]);
+	importer.addDataOverride("fediverse", `${statusesUrl}&max_id=100`, []);
+	importer.addDataOverride("fediverse", "https://fosstodon.org/api/v1/statuses/100/context", { ancestors: [], descendants: [] });
 	importer.addDataOverride("fediverse", "https://fosstodon.org/api/v1/statuses/111/context", {
 		ancestors: [],
 		descendants: [{
@@ -1614,8 +1626,16 @@ test("Fediverse replies", async (t) => {
 		}],
 	});
 
-	let [entry] = await importer.getEntries();
+	let entries = await importer.getEntries();
+	assert.equal(entries.length, 2);
+	let [entry, older] = entries;
 	assert.equal(entry.metadata.slug, "111");
+	assert.equal(entry.uuid, "11ty/import::rss::https://fosstodon.org/@eleventy/111");
+	assert.deepEqual(entry.authors, [{ name: "Eleventy", url: "https://fosstodon.org/@eleventy" }]);
+	assert.deepEqual(entry.dateUpdated, new Date("2024-01-01T01:00:00.000Z"));
+	assert.equal(entry.content, `<p>Hello</p>\n<img src="https://files.example/a.png" alt="Alt">\n<video controls="" src="https://files.example/b.mp4" poster="https://files.example/b.png"></video>`);
+	assert.equal(older.metadata.slug, "100");
+	assert.equal(older.dateUpdated, undefined);
 	let [first, warning, unlisted, noindex] = entry.comments;
 	assert.deepEqual([first.id, first.parentId, first.author.name], ["222", 0, "jane@mastodon.social"]);
 	assert.equal(first.content, "<p>Hi!</p>");

@@ -220,7 +220,7 @@ class Importer {
 			} else if(type === "bluesky") {
 				cls = BlueskyUser; // RSS
 			} else if(type === "fediverse") {
-				cls = FediverseUser; // RSS
+				cls = FediverseUser;
 			} else if(type === "squarespace") {
 				cls = Squarespace;
 			} else if(type === "twitter") {

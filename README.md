@@ -156,7 +156,7 @@ npx @11ty/import buttondown zachleat
 #### Fediverse
 
 ```sh
-# Import recent Mastodon posts (via RSS)
+# Import Mastodon posts (via the Mastodon API)
 npx @11ty/import fediverse eleventy@fosstodon.org
 ```
 

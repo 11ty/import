@@ -1,15 +1,28 @@
 import path from "node:path";
 import { DataSource } from "../DataSource.js";
+import { MediaRss } from "../MediaRss.js";
 import { Rss } from "./Rss.js";
 
-export class FediverseUser extends Rss {
+// Public posts via the Mastodon API (https://docs.joinmastodon.org/methods/accounts/#statuses)
+export class FediverseUser extends DataSource {
 	static TYPE = "fediverse";
 	static TYPE_FRIENDLY = "Fediverse";
+	static PER_PAGE = 40;
+	static SUPPORTS_COMMENTS = true;
+	static MEDIUMS = {
+		image: "image",
+		gifv: "video",
+		video: "video",
+		audio: "audio",
+	};
+
+	#account;
+	#maxId;
 
 	constructor(fullUsername) {
-		let { username, hostname } = FediverseUser.parseUsername(fullUsername);
-		super(`https://${hostname}/users/${username}.rss`);
+		super();
 
+		let { username, hostname } = FediverseUser.parseUsername(fullUsername);
 		this.username = username;
 		this.hostname = hostname;
 	}
@@ -43,13 +56,77 @@ export class FediverseUser extends Rss {
 		return path.join(`${username}@${hostname}`, postId);
 	}
 
-	cleanEntry(entry, data) {
-		let obj = super.cleanEntry(entry, data);
-		obj.type = FediverseUser.TYPE;
-		obj.contentType = "html";
-		obj.metadata = { ...obj.metadata, slug: FediverseUser.parseFromUrl(obj.url).postId };
+	getType() {
+		return "json";
+	}
 
-		return obj;
+	async getEntries() {
+		this.#account = await this.getData(`https://${this.hostname}/api/v1/accounts/lookup?acct=${encodeURIComponent(this.username)}`, "json");
+		this.#maxId = undefined;
+
+		return super.getEntries();
+	}
+
+	// Paged by `max_id` cursor, includes self-replies (threads) but not boosts or replies to others
+	getUrl() {
+		return pageNumber => {
+			if(pageNumber > 1 && !this.#maxId) {
+				return;
+			}
+
+			let maxId = pageNumber > 1 ? `&max_id=${this.#maxId}` : "";
+			return `https://${this.hostname}/api/v1/accounts/${this.#account.id}/statuses?limit=${FediverseUser.PER_PAGE}&exclude_replies=true&exclude_reblogs=true${maxId}`;
+		};
+	}
+
+	getEntriesFromData(data) {
+		let statuses = Array.isArray(data) ? data : [];
+		this.#maxId = statuses.at(-1)?.id;
+		return statuses;
+	}
+
+	// Matches the RSS `<guid>` used by earlier versions
+	getUniqueIdFromEntry(status) {
+		return `${DataSource.UUID_PREFIX}::${Rss.TYPE}::${status.url}`;
+	}
+
+	getRawEntryDates(status) {
+		return {
+			created: this.toDateObj(status.created_at),
+			updated: this.toDateObj(status.edited_at),
+		};
+	}
+
+	static getMedia(status) {
+		return (status.media_attachments || []).map(attachment => ({
+			url: attachment.url,
+			medium: FediverseUser.MEDIUMS[attachment.type],
+			description: attachment.description,
+			poster: attachment.preview_url,
+		})).filter(media => media.url && media.medium);
+	}
+
+	cleanEntry(status) {
+		let { created, updated } = this.getRawEntryDates(status);
+		let account = status.account || this.#account;
+
+		return {
+			uuid: this.getUniqueIdFromEntry(status),
+			type: FediverseUser.TYPE,
+			title: this.toReadableDate(status.created_at),
+			url: status.url,
+			authors: [{
+				name: account?.display_name || account?.acct,
+				url: account?.url,
+			}],
+			date: created,
+			...(updated ? { dateUpdated: updated } : {}),
+			content: MediaRss.appendToContent(status.content, FediverseUser.getMedia(status)),
+			contentType: "html",
+			metadata: {
+				slug: status.id,
+			},
+		};
 	}
 
 	// Unlisted replies, content warnings, and authors that opted out of search engines are links only
