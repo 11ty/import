@@ -2336,3 +2336,82 @@ test("Medium export", async (t) => {
 	assert.deepEqual(draft.authors, []);
 	assert.equal(draft.content, "Draft text.");
 });
+
+test("Linktree", async (t) => {
+	let importer = getImporter();
+	importer.addSource("linktree", "@example");
+
+	let link = (id, position, extra = {}) => ({ id: String(id), type: "CLASSIC", title: `Link ${id}`, url: `https://example.com/${id}`, position, parent: null, locked: null, thumbnail: null, ...extra });
+	let pageProps = {
+		account: {
+			id: 1,
+			username: "example",
+			pageTitle: " Example & Co ",
+			description: "A bio",
+			profilePictureUrl: "https://ugc.production.linktr.ee/avatar.png",
+			createdAt: 1629853014000,
+			updatedAt: 1792131940000,
+			socialLinks: [{ type: "INSTAGRAM", url: "https://instagram.com/example", position: 1 }, { type: "TIKTOK", url: "https://tiktok.com/@example", position: 0 }],
+		},
+		links: [
+			link(2, 1, { title: " Second  ", thumbnail: "https://ugc.production.linktr.ee/thumb.png" }),
+			link(1, 0),
+			link(10, 2, { type: "GROUP", title: "Group ", url: "" }),
+			link(12, 1, { parent: { id: 10, context: { layoutOption: "stack" } } }),
+			link(11, 0, { type: "YOUTUBE_VIDEO", parent: { id: 10, context: { layoutOption: "carousel" } } }),
+			// Children of a missing group, an empty group, widgets without a URL, and locked links are skipped
+			link(21, 0, { parent: { id: 20 } }),
+			link(30, 3, { type: "GROUP", title: "Empty", url: "" }),
+			link(4, 4, { type: "EXTENSION", url: "" }),
+			link(5, 5, { locked: true }),
+			link(6, 6),
+		],
+	};
+	importer.addDataOverride("linktree", "https://linktr.ee/example", `<html><body><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps } })}</script></body></html>`);
+
+	let [entry] = await importer.getEntries({ contentType: "html" });
+
+	assert.equal(entry.uuid, "11ty/import::linktree::1");
+	assert.equal(entry.title, "Example & Co");
+	assert.equal(entry.url, "https://linktr.ee/example");
+	assert.equal(entry.filePath, "example.html");
+	assert.equal(entry.description, "A bio");
+	assert.deepEqual(entry.date, new Date(1629853014000));
+	assert.deepEqual(entry.dateUpdated, new Date(1792131940000));
+	assert.deepEqual(entry.authors, [{ name: "Example & Co", url: "https://linktr.ee/example", avatarUrl: "https://ugc.production.linktr.ee/avatar.png" }]);
+	assert.deepEqual(entry.metadata, {
+		id: 1,
+		slug: "example",
+		postType: "page",
+		links: [
+			{ id: "1", type: "CLASSIC", title: "Link 1", url: "https://example.com/1" },
+			{ id: "2", type: "CLASSIC", title: "Second", url: "https://example.com/2" },
+			{ id: "11", type: "YOUTUBE_VIDEO", title: "Link 11", url: "https://example.com/11", group: "Group" },
+			{ id: "12", type: "CLASSIC", title: "Link 12", url: "https://example.com/12", group: "Group" },
+			{ id: "6", type: "CLASSIC", title: "Link 6", url: "https://example.com/6" },
+		],
+		socialLinks: [
+			{ type: "TIKTOK", url: "https://tiktok.com/@example" },
+			{ type: "INSTAGRAM", url: "https://instagram.com/example" },
+		],
+		media: { featuredImage: "https://ugc.production.linktr.ee/avatar.png" },
+	});
+	assert.equal(entry.content, `<ul>
+<li><a href="https://example.com/1">Link 1</a></li>
+<li><img src="https://ugc.production.linktr.ee/thumb.png" alt=""> <a href="https://example.com/2">Second</a></li>
+</ul>
+<h2>Group</h2>
+<ul>
+<li><a href="https://example.com/11">Link 11</a></li>
+<li><a href="https://example.com/12">Link 12</a></li>
+</ul>
+<ul>
+<li><a href="https://example.com/6">Link 6</a></li>
+</ul>`);
+});
+
+test("Asset filenames replace URL-unsafe characters", async (t) => {
+	assert.equal(Fetcher.getFilenameFromSrc("https://example.com/Screen%20Shot%202023-07-12%20at%207.41.23%20AM.png"), `Screen-Shot-2023-07-12-at-7.41-${Fetcher.createHash("https://example.com/Screen%20Shot%202023-07-12%20at%207.41.23%20AM.png")}.png`);
+	assert.equal(Fetcher.getFilenameFromSrc("https://example.com/caf%C3%A9%20(1).jpg"), `café-1-${Fetcher.createHash("https://example.com/caf%C3%A9%20(1).jpg")}.jpg`);
+	assert.equal(Fetcher.getFilenameFromSrc("https://example.com/plain-file_1.png"), `plain-file_1-${Fetcher.createHash("https://example.com/plain-file_1.png")}.png`);
+});

@@ -29,6 +29,7 @@ import { JsonFeed } from "./DataSource/JsonFeed.js";
 import { Blogger } from "./DataSource/Blogger.js";
 import { DevTo } from "./DataSource/DevTo.js";
 import { MediumExport } from "./DataSource/MediumExport.js";
+import { Linktree } from "./DataSource/Linktree.js";
 
 import pkg from "../package.json" with { type: "json" };
 
@@ -235,6 +236,8 @@ class Importer {
 				cls = DevTo;
 			} else if(type === "medium") {
 				cls = MediumExport;
+			} else if(type === "linktree") {
+				cls = Linktree;
 			}
 		} else if(typeof type === "function") {
 			cls = type;

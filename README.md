@@ -172,6 +172,7 @@ npx @11ty/import bluesky @11ty.dev
 - `blogger` (blog URL, custom domains too)
 - `devto` (DEV username or organization)
 - `ghost` (site URL)
+- `linktree` (Linktree username or profile URL)
 - `medium` (extracted Medium export folder path)
 - `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
 - `twitter` (Twitter/X archive `.zip` file or extracted folder path)
@@ -190,6 +191,9 @@ npx @11ty/import blogger https://blog.chromium.org
 
 # Import all published articles for a user or organization
 npx @11ty/import devto ben
+
+# Import a profile’s links as a single page
+npx @11ty/import linktree @linktree
 
 # Import posts and drafts from an extracted Medium export (Settings → Security and apps → Download your information)
 npx @11ty/import medium ./medium-export

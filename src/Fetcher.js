@@ -46,11 +46,12 @@ class Fetcher {
 		let {pathname} = new URL(src);
 		let hash = this.createHash(src);
 
-		let filename = decodeURIComponent(pathname.split("/").pop());
+		// Spaces and other URL-unsafe characters would break Markdown and HTML references
+		let filename = decodeURIComponent(pathname.split("/").pop()).replace(/[^\p{L}\p{N}._-]+/gu, "-");
 		let lastDot = filename.lastIndexOf(".");
 
 		if(lastDot > -1) {
-			let filenameWithoutExtension = filename.slice(0, Math.min(lastDot, MAXIMUM_URL_FILENAME_SIZE));
+			let filenameWithoutExtension = Fetcher.trimFilename(filename.slice(0, lastDot));
 			let extension = filename.slice(lastDot + 1);
 			return `${filenameWithoutExtension}-${hash}.${extension}`;
 		}
@@ -58,7 +59,11 @@ class Fetcher {
 		let [, fileExtensionFallback] = contentType.split("/");
 
 		// No known file extension
-		return `${filename.slice(0, MAXIMUM_URL_FILENAME_SIZE)}-${hash}${fileExtensionFallback ? `.${fileExtensionFallback}` : ""}`;
+		return `${Fetcher.trimFilename(filename)}-${hash}${fileExtensionFallback ? `.${fileExtensionFallback}` : ""}`;
+	}
+
+	static trimFilename(filename) {
+		return filename.slice(0, MAXIMUM_URL_FILENAME_SIZE).replace(/-+$/, "");
 	}
 
 	static createHash(str) {
