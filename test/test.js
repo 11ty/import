@@ -15,6 +15,8 @@ import { WordPressApi } from "../src/DataSource/WordPressApi.js";
 import { Squarespace } from "../src/DataSource/Squarespace.js";
 import { Rss } from "../src/DataSource/Rss.js";
 import { Npm } from "../src/DataSource/Npm.js";
+import { GitHub } from "../src/DataSource/GitHub.js";
+import { GitHubGist } from "../src/DataSource/GitHubGist.js";
 import { Archive } from "../src/Archive.js";
 
 function cleanContent(content) {
@@ -3293,4 +3295,128 @@ test("npm targets", async (t) => {
 	assert.deepEqual(Npm.parseTarget("~zachleat"), { name: "zachleat", isOrg: false });
 	assert.equal(Npm.getRepositoryUrl("git@github.com:11ty/eleventy.git"), "https://github.com/11ty/eleventy");
 	assert.equal(Npm.getRepositoryUrl("11ty/eleventy"), "https://github.com/11ty/eleventy");
+});
+
+test("GitHub releases", async (t) => {
+	withEnv(t, { GITHUB_TOKEN: undefined });
+	let importer = getImporter();
+	importer.addSource("github", "https://github.com/11ty/Eleventy");
+
+	let author = { login: "zachleat", html_url: "https://github.com/zachleat", avatar_url: "https://avatars.githubusercontent.com/u/39355" };
+	importer.addDataOverride("github", "https://api.github.com/repos/11ty/eleventy/releases?per_page=100&page=1", [
+		{ id: 2, tag_name: "v3.0.0-beta.1", name: "", prerelease: true, html_url: "https://github.com/11ty/eleventy/releases/tag/v3.0.0-beta.1", author, created_at: "2024-02-01T00:00:00Z", published_at: "2024-02-01T00:00:00Z", body_html: "<p>Beta <a href=\"https://www.11ty.dev/\">docs</a></p>" },
+		{ id: 1, tag_name: "v2.0.0", name: "Eleventy v2.0.0", prerelease: false, html_url: "https://github.com/11ty/eleventy/releases/tag/v2.0.0", author, created_at: "2023-02-01T00:00:00Z", published_at: "2023-02-08T00:00:00Z", body_html: "<h2>Features</h2><ul><li>Fast</li></ul>" },
+	]);
+	importer.addDataOverride("github", "https://api.github.com/repos/11ty/eleventy/releases?per_page=100&page=2", []);
+
+	let entries = await importer.getEntries({ contentType: "markdown" });
+	assert.deepEqual(entries.map(entry => entry.filePath), ["releases/v3.0.0-beta.1.md", "releases/v2.0.0.md"]);
+
+	let [beta, stable] = entries;
+	assert.equal(beta.title, "v3.0.0-beta.1");
+	assert.deepEqual(beta.metadata, { id: 2, tag: "v3.0.0-beta.1", prerelease: true });
+	assert.equal(beta.content, "Beta [docs](https://www.11ty.dev/)");
+
+	assert.equal(stable.uuid, "11ty/import::github::11ty/eleventy::1");
+	assert.equal(stable.title, "Eleventy v2.0.0");
+	assert.deepEqual(stable.date, new Date("2023-02-08T00:00:00Z"));
+	assert.deepEqual(stable.authors, [{ name: "zachleat", url: "https://github.com/zachleat", avatarUrl: "https://avatars.githubusercontent.com/u/39355" }]);
+	assert.equal(stable.content, "## Features\n\n-   Fast");
+
+	let [source] = importer.getSources();
+	assert.equal(source.getHeaders("https://api.github.com/x").Accept, "application/vnd.github.html+json");
+	assert.equal(source.getHeaders("https://api.github.com/x").Authorization, undefined);
+});
+
+test("GitHub gists", async (t) => {
+	withEnv(t, { GITHUB_TOKEN: "secret" });
+	let importer = getImporter();
+	importer.addSource("github-gist", "@ZachLeat");
+
+	let owner = { login: "zachleat", html_url: "https://github.com/zachleat" };
+	importer.addDataOverride("github-gist", "https://api.github.com/users/zachleat/gists?per_page=100&page=1", [{ id: "abc" }]);
+	importer.addDataOverride("github-gist", "https://api.github.com/users/zachleat/gists?per_page=100&page=2", []);
+	importer.addDataOverride("github-gist", "https://api.github.com/gists/abc", {
+		id: "abc",
+		description: "",
+		html_url: "https://gist.github.com/abc",
+		owner,
+		created_at: "2020-01-01T00:00:00Z",
+		updated_at: "2021-01-01T00:00:00Z",
+		files: {
+			"notes.md": { filename: "notes.md", language: "Markdown", content: "# Notes\n\nHi" },
+			"a.js": { filename: "a.js", language: "JavaScript", content: "let a = 1 < 2;" },
+			"big.txt": { filename: "big.txt", language: "Text", truncated: true, content: "…", raw_url: "https://gist.githubusercontent.com/zachleat/abc/raw/big.txt" },
+		},
+	});
+
+	let [gist] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(gist.filePath, "abc.md");
+	assert.equal(gist.uuid, "11ty/import::github-gist::abc");
+	assert.equal(gist.title, "notes.md");
+	assert.deepEqual(gist.dateUpdated, new Date("2021-01-01T00:00:00Z"));
+	assert.deepEqual(gist.authors, [{ name: "zachleat", url: "https://github.com/zachleat" }]);
+	assert.deepEqual(gist.metadata, { id: "abc", files: ["notes.md", "a.js", "big.txt"] });
+	assert.equal(gist.content, [
+		"## notes.md",
+		"",
+		"# Notes",
+		"",
+		"Hi",
+		"",
+		"## a.js",
+		"",
+		"```javascript",
+		"let a = 1 < 2;",
+		"```",
+		"",
+		"## big.txt",
+		"",
+		"[big.txt](https://gist.githubusercontent.com/zachleat/abc/raw/big.txt)",
+	].join("\n"));
+
+	let [source] = importer.getSources();
+	assert.equal(source.getHeaders("https://api.github.com/x").Authorization, "Bearer secret");
+	assert.deepEqual(source.getHeaders("https://example.com/"), {});
+});
+
+test("GitHub repositories", async (t) => {
+	withEnv(t, { GITHUB_TOKEN: undefined });
+	let importer = getImporter();
+	importer.addSource("github", "11ty");
+
+	let owner = { login: "11ty", html_url: "https://github.com/11ty" };
+	importer.addDataOverride("github", "https://api.github.com/users/11ty/repos?type=owner&sort=created&direction=desc&per_page=100&page=1", [
+		{ full_name: "11ty/eleventy", name: "eleventy", html_url: "https://github.com/11ty/eleventy", owner, description: "A simpler site generator.", created_at: "2017-11-01T00:00:00Z", pushed_at: "2026-10-01T00:00:00Z", stargazers_count: 18000, language: "JavaScript", license: { spdx_id: "MIT" }, homepage: "https://www.11ty.dev/", topics: ["ssg"] },
+		{ full_name: "11ty/fork", name: "fork", fork: true, html_url: "https://github.com/11ty/fork", owner, created_at: "2020-01-01T00:00:00Z" },
+		{ full_name: "11ty/empty", name: "empty", html_url: "https://github.com/11ty/empty", owner, description: "No README", created_at: "2016-01-01T00:00:00Z", pushed_at: "2016-01-01T00:00:00Z", stargazers_count: 0, archived: true, license: { spdx_id: "NOASSERTION" } },
+	]);
+	importer.addDataOverride("github", "https://api.github.com/users/11ty/repos?type=owner&sort=created&direction=desc&per_page=100&page=2", []);
+	importer.addDataOverride("github", "https://api.github.com/repos/11ty/eleventy/readme", "# Eleventy\n\n![Logo](./docs/logo.png) See [docs](docs/README.md).");
+	importer.addDataOverride("github", "https://api.github.com/repos/11ty/empty/readme", new Error("Not Found"));
+
+	let entries = await importer.getEntries({ contentType: "markdown" });
+	assert.deepEqual(entries.map(entry => entry.filePath), ["eleventy.md", "empty.md"]);
+
+	let [eleventy, empty] = entries;
+	assert.equal(eleventy.uuid, "11ty/import::github::11ty/eleventy");
+	assert.equal(eleventy.description, "A simpler site generator.");
+	assert.deepEqual(eleventy.dateUpdated, new Date("2026-10-01T00:00:00Z"));
+	assert.deepEqual(eleventy.tags, ["ssg"]);
+	assert.deepEqual(eleventy.metadata, { name: "11ty/eleventy", stars: 18000, language: "JavaScript", license: "MIT", homepage: "https://www.11ty.dev/", tags: ["ssg"] });
+	assert.equal(eleventy.content, "# Eleventy\n\n![Logo](https://raw.githubusercontent.com/11ty/eleventy/HEAD/docs/logo.png) See [docs](https://github.com/11ty/eleventy/blob/HEAD/docs/README.md).");
+
+	assert.deepEqual(empty.metadata, { name: "11ty/empty", stars: 0, archived: true });
+	assert.equal(empty.content, "No README");
+
+	let [source] = importer.getSources();
+	assert.equal(source.getHeaders("https://api.github.com/repos/11ty/eleventy/readme").Accept, "application/vnd.github.raw+json");
+});
+
+test("GitHub targets", async (t) => {
+	assert.deepEqual(GitHub.parseTarget("11ty/eleventy"), { owner: "11ty", repo: "eleventy" });
+	assert.deepEqual(GitHub.parseTarget("https://github.com/11ty/eleventy.git"), { owner: "11ty", repo: "eleventy" });
+	assert.deepEqual(GitHub.parseTarget("11ty"), { owner: "11ty", repo: undefined });
+	assert.deepEqual(GitHub.parseTarget("https://github.com/ZachLeat"), { owner: "zachleat", repo: undefined });
+	assert.equal(GitHubGist.getUsername("https://gist.github.com/zachleat"), "zachleat");
 });

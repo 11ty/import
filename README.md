@@ -187,6 +187,8 @@ npx @11ty/import bluesky @11ty.dev
 - `blogger` (blog URL, custom domains too, links to other imported posts point to their files)
 - `devto` (DEV username or organization)
 - `ghost` (site URL)
+- `github` (`owner/repo` or repository URL for releases, `owner` or profile URL for a user’s or organization’s repositories, an optional `GITHUB_TOKEN` environment variable raises the rate limit and includes draft releases)
+- `github-gist` (GitHub username, public gists)
 - `instagram` (username of a business or creator account, requires an `INSTAGRAM_ACCESS_TOKEN` environment variable for that account from the [Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login))
 - `linktree` (Linktree username or profile URL)
 - `medium` (extracted Medium export folder path)
@@ -225,6 +227,15 @@ npx @11ty/import rss https://medium.com/feed/@zachleat
 # Import a page for each package (README, version, and keywords) a user or organization maintains
 npx @11ty/import npm zachleat
 npx @11ty/import npm @11ty
+
+# Import releases for a repository
+npx @11ty/import github 11ty/eleventy
+
+# Import a page for each repository (README, language, and topics) a user or organization owns, without forks
+npx @11ty/import github 11ty
+
+# Import public gists for a user
+npx @11ty/import github-gist zachleat
 
 # Import posts and reels with media (requires INSTAGRAM_ACCESS_TOKEN)
 npx @11ty/import instagram zachleat

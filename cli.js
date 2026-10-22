@@ -165,6 +165,11 @@ if(help) {
   # Import npm packages for a user or organization (one page per package README)
   npx @11ty/import npm zachleat
   npx @11ty/import npm @11ty
+
+  # Import GitHub releases for a repository, repositories for a user or organization, or public gists for a user (optional GITHUB_TOKEN)
+  npx @11ty/import github 11ty/eleventy
+  npx @11ty/import github 11ty
+  npx @11ty/import github-gist zachleat
 `);
 
 	process.exit();
