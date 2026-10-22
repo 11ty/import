@@ -20,6 +20,7 @@ test("YouTube user", async (t) => {
 
 	importer.setVerbose(false);
 	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
 
 	importer.addSource("youtubeUser", "UCskGTioqrMBcw8pd14_334A");
 
@@ -31,7 +32,8 @@ test("YouTube user", async (t) => {
 
 	let [post] = entries;
 
-	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "dateUpdated", "filePath", "outputContentType", "title", "type", "url", "uuid"]);
+	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "dateUpdated", "filePath", "metadata", "outputContentType", "title", "type", "url", "uuid"]);
+	assert.equal(post.metadata.media.featuredImage, "https://i4.ytimg.com/vi/kNI_LcbvtNk/hqdefault.jpg");
 	assert.equal(post.content.length, 812);
 	assert.equal(post.content, `CloudCannon is the Recommended CMS Partner of 11ty:
 
@@ -465,6 +467,81 @@ test("RSS audio enclosures and media:content", async (t) => {
 <audio controls src="https://example.com/clip.ogg"></audio>
 <img src="https://example.com/photo.png" alt="">
 <audio controls src="https://example.com/episode.mp3"></audio>`);
+});
+
+test("RSS video, image enclosures, media:group, and thumbnails", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("rss", "https://example.com/feed.xml");
+	importer.addDataOverride("rss", "https://example.com/feed.xml", Fetcher.parseXml(`<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+	<channel>
+		<title>Example</title>
+		<link>https://example.com/</link>
+		<item>
+			<title>Post</title>
+			<link>https://example.com/post/</link>
+			<pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+			<media:thumbnail url="https://example.com/thumb.jpg"/>
+			<media:content url="https://example.com/clip.mp4" type="video/mp4" medium="video"/>
+			<media:content url="https://example.com/old.swf" type="application/x-shockwave-flash"/>
+			<media:group>
+				<media:content url="https://example.com/low.mp4" type="video/mp4"/>
+				<media:content url="https://example.com/high.mp4" type="video/mp4" isDefault="true"/>
+			</media:group>
+			<enclosure url="https://example.com/photo.jpg" length="1234" type="image/jpeg"/>
+			<enclosure url="https://example.com/movie.webm" length="1234" type="video/webm"/>
+		</item>
+	</channel>
+</rss>`));
+
+	let [entry] = await importer.getEntries();
+	assert.equal(entry.metadata.media.featuredImage, "https://example.com/thumb.jpg");
+	assert.equal(entry.content, `<video controls src="https://example.com/clip.mp4" poster="https://example.com/thumb.jpg"></video>
+<video controls src="https://example.com/high.mp4" poster="https://example.com/thumb.jpg"></video>
+<img src="https://example.com/photo.jpg" alt="">
+<video controls src="https://example.com/movie.webm"></video>`);
+});
+
+test("Atom enclosures and Media RSS", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	importer.addSource("atom", "https://example.com/feed.atom");
+	importer.addDataOverride("atom", "https://example.com/feed.atom", Fetcher.parseXml(`<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+	<title>Example</title>
+	<author><name>Author</name></author>
+	<entry>
+		<id>tag:example.com,2024:html</id>
+		<title>HTML</title>
+		<link rel="alternate" href="https://example.com/html/"/>
+		<link rel="enclosure" href="https://example.com/episode.mp3" type="audio/mpeg"/>
+		<published>2024-01-02T00:00:00Z</published>
+		<content type="html">&lt;p&gt;Hello&lt;/p&gt;</content>
+		<media:content url="https://example.com/photo.png" type="image/png"><media:description>A photo</media:description></media:content>
+	</entry>
+	<entry>
+		<id>tag:example.com,2024:text</id>
+		<title>Text</title>
+		<link rel="enclosure" href="https://example.com/episode.mp3" type="audio/mpeg"/>
+		<published>2024-01-01T00:00:00Z</published>
+		<content type="text">Hello</content>
+	</entry>
+</feed>`));
+
+	let [html, text] = await importer.getEntries();
+	assert.equal(html.url, "https://example.com/html/");
+	assert.equal(html.content, `<p>Hello</p>
+<img src="https://example.com/photo.png" alt="A photo">
+<audio controls="" src="https://example.com/episode.mp3"></audio>`);
+	assert.equal(text.content, "Hello");
 });
 
 test("Documents that fail to process are counted as errors", async (t) => {

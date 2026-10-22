@@ -1,4 +1,5 @@
 import { DataSource } from "../DataSource.js";
+import { MediaRss } from "../MediaRss.js";
 
 export class Atom extends DataSource {
 	static TYPE = "atom";
@@ -33,8 +34,9 @@ export class Atom extends DataSource {
 		if(this.isValidHttpUrl(entry.id)) {
 			return entry.id;
 		}
-		if(entry.link && entry.link["@_rel"] === "alternate" && entry.link["@_href"] && this.isValidHttpUrl(entry.link["@_href"])) {
-			return entry.link["@_href"];
+		let alternate = MediaRss.toArray(entry.link).find(link => link["@_rel"] === "alternate");
+		if(alternate?.["@_href"] && this.isValidHttpUrl(alternate["@_href"])) {
+			return alternate["@_href"];
 		}
 		return entry.id;
 	}
@@ -66,8 +68,24 @@ export class Atom extends DataSource {
 		// Parsed as a plain value (not an object) when <content> has no attributes
 		let content = rawEntry.content;
 		let hasAttributes = typeof content === "object" && content !== null;
+		let contentType = hasAttributes ? content["@_type"] : undefined;
+		if(hasAttributes) {
+			content = content["#text"];
+		}
+
+		// Media markup only makes sense in HTML content
+		if(contentType === "html") {
+			let enclosures = MediaRss.toArray(rawEntry.link).filter(link => link["@_rel"] === "enclosure").map(link => ({ url: link["@_href"], type: link["@_type"] }));
+			content = MediaRss.appendToContent(content, [
+				...MediaRss.getMediaFromEntry(rawEntry),
+				...MediaRss.getMediaFromEnclosures(enclosures),
+			]);
+		}
+
+		let featuredImage = MediaRss.getFeaturedImageUrl(rawEntry);
 
 		return {
+			...(featuredImage ? { metadata: { media: { featuredImage } } } : {}),
 			uuid: this.getUniqueIdFromEntry(rawEntry),
 			type: Atom.TYPE,
 			title: rawEntry.title,
@@ -75,8 +93,8 @@ export class Atom extends DataSource {
 			authors,
 			date: created,
 			dateUpdated: updated,
-			content: hasAttributes ? content["#text"] : content,
-			contentType: hasAttributes ? content["@_type"] : undefined,
+			content,
+			contentType,
 		}
 	}
 }

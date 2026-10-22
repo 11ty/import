@@ -1,4 +1,5 @@
 import { DataSource } from "../DataSource.js";
+import { MediaRss } from "../MediaRss.js";
 
 export class YouTubeUser extends DataSource {
 	static TYPE = "youtube";
@@ -39,6 +40,7 @@ export class YouTubeUser extends DataSource {
 
 	cleanEntry(rawEntry) {
 		let { created, updated } = this.getRawEntryDates(rawEntry);
+		let featuredImage = MediaRss.getFeaturedImageUrl(rawEntry);
 
 		return {
 			uuid: this.getUniqueIdFromEntry(rawEntry),
@@ -56,6 +58,7 @@ export class YouTubeUser extends DataSource {
 			// TODO linkify, nl2br
 			content: rawEntry['media:group']['media:description'],
 			contentType: "text",
+			...(featuredImage ? { metadata: { media: { featuredImage } } } : {}),
 		}
 	}
 }
