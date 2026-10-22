@@ -187,6 +187,7 @@ npx @11ty/import bluesky @11ty.dev
 - `blogger` (blog URL, custom domains too, links to other imported posts point to their files)
 - `devto` (DEV username or organization)
 - `ghost` (site URL)
+- `instagram` (username of a business or creator account, requires an `INSTAGRAM_ACCESS_TOKEN` environment variable for that account from the [Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login))
 - `linktree` (Linktree username or profile URL)
 - `medium` (extracted Medium export folder path)
 - `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
@@ -219,6 +220,9 @@ npx @11ty/import medium ./medium-export
 
 # Recent posts are also available via RSS
 npx @11ty/import rss https://medium.com/feed/@zachleat
+
+# Import posts and reels with media (requires INSTAGRAM_ACCESS_TOKEN)
+npx @11ty/import instagram zachleat
 
 # Import tweets (not retweets or replies to others) with media from your archive, threads are comments on the first tweet (Settings → Your account → Download an archive of your data)
 npx @11ty/import twitter ./twitter-2026-01-01.zip

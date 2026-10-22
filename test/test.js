@@ -3143,3 +3143,80 @@ test("Fetch origin limit", async (t) => {
 	await Promise.all([1, 2, 3, 4, 5, 6].map(id => fetcher.fetch(`${origin}/${id}`)));
 	assert.equal(maxActive, 2);
 });
+
+const INSTAGRAM_API = "https://graph.instagram.com/v23.0";
+const INSTAGRAM_FIELDS = "id%2Ccaption%2Cmedia_type%2Cmedia_product_type%2Cmedia_url%2Cpermalink%2Cthumbnail_url%2Ctimestamp%2Cchildren%7Bid%2Cmedia_type%2Cmedia_url%2Cthumbnail_url%7D";
+
+function getInstagramImporter(t, target = "@ZachLeat") {
+	withEnv(t, { INSTAGRAM_ACCESS_TOKEN: "secret" });
+	let importer = getImporter();
+	importer.addSource("instagram", target);
+	importer.addDataOverride("instagram", `${INSTAGRAM_API}/me?fields=username%2Cname%2Cprofile_picture_url&access_token=secret`, {
+		username: "zachleat",
+		name: "Zach Leatherman",
+		profile_picture_url: "https://scontent.cdninstagram.com/avatar.jpg",
+	});
+	importer.addDataOverride("instagram", `${INSTAGRAM_API}/me/media?fields=${INSTAGRAM_FIELDS}&limit=100&access_token=secret`, {
+		data: [
+			{ id: "3", media_type: "VIDEO", media_product_type: "REELS", media_url: "https://scontent.cdninstagram.com/reel.mp4", thumbnail_url: "https://scontent.cdninstagram.com/reel.jpg", permalink: "https://www.instagram.com/reel/CCC/", timestamp: "2023-03-01T12:00:00+0000" },
+			{ id: "2", media_type: "CAROUSEL_ALBUM", media_product_type: "FEED", caption: "Two things", permalink: "https://www.instagram.com/p/BBB/", timestamp: "2023-02-01T12:00:00+0000", children: { data: [
+				{ id: "21", media_type: "IMAGE", media_url: "https://scontent.cdninstagram.com/two.jpg" },
+				// Flagged for copyrighted audio
+				{ id: "22", media_type: "VIDEO" },
+			] } },
+		],
+		paging: { next: `${INSTAGRAM_API}/me/media?after=cursor&access_token=secret` },
+	});
+	importer.addDataOverride("instagram", `${INSTAGRAM_API}/me/media?after=cursor&access_token=secret`, {
+		data: [
+			{ id: "1", media_type: "IMAGE", media_product_type: "FEED", caption: "Hello @eleven_ty & friends #11ty #café\nSecond line\n\nSee https://www.11ty.dev/docs/. Email me@example.com", media_url: "https://scontent.cdninstagram.com/one.jpg", permalink: "https://www.instagram.com/p/AAA/", timestamp: "2023-01-01T12:00:00+0000" },
+		],
+	});
+	return importer;
+}
+
+test("Instagram", async (t) => {
+	let importer = getInstagramImporter(t);
+
+	let entries = await importer.getEntries({ contentType: "markdown" });
+	assert.deepEqual(entries.map(entry => entry.filePath), ["reel/CCC.md", "p/BBB.md", "p/AAA.md"]);
+
+	let [reel, carousel, photo] = entries;
+	assert.equal(photo.uuid, "11ty/import::instagram::1");
+	assert.equal(photo.type, "instagram");
+	assert.equal(photo.url, "https://www.instagram.com/p/AAA/");
+	assert.deepEqual(photo.date, new Date("2023-01-01T12:00:00.000Z"));
+	assert.deepEqual(photo.metadata, { id: "1", slug: "AAA", postType: "post" });
+	assert.deepEqual(photo.authors, [{ name: "Zach Leatherman", url: "https://www.instagram.com/zachleat/", avatarUrl: "https://scontent.cdninstagram.com/avatar.jpg" }]);
+	assert.equal(photo.content, [
+		`Hello [@eleven\\_ty](https://www.instagram.com/eleven_ty/) & friends [#11ty](https://www.instagram.com/explore/tags/11ty/) [#café](https://www.instagram.com/explore/tags/caf%C3%A9/)  `,
+		`Second line`,
+		``,
+		`See [https://www.11ty.dev/docs/](https://www.11ty.dev/docs/). Email me@example.com`,
+		``,
+		`![](https://scontent.cdninstagram.com/one.jpg)`,
+	].join("\n"));
+
+	assert.equal(carousel.content, `Two things\n\n![](https://scontent.cdninstagram.com/two.jpg)`);
+
+	assert.equal(reel.metadata.postType, "reel");
+	assert.equal(reel.content, `<video controls="" src="https://scontent.cdninstagram.com/reel.mp4" poster="https://scontent.cdninstagram.com/reel.jpg"></video>`);
+});
+
+test("Instagram requires a token", async (t) => {
+	withEnv(t, { INSTAGRAM_ACCESS_TOKEN: undefined });
+	assert.throws(() => new Importer().addSource("instagram", "zachleat"), /INSTAGRAM_ACCESS_TOKEN/);
+});
+
+test("Instagram token must match the username", async (t) => {
+	let importer = getInstagramImporter(t, "https://www.instagram.com/someone/");
+	await assert.rejects(importer.getEntries(), /for @zachleat, not @someone/);
+});
+
+test("Instagram token isn’t logged", async (t) => {
+	withEnv(t, { INSTAGRAM_ACCESS_TOKEN: "secret" });
+	let importer = new Importer();
+	importer.addSource("instagram", "zachleat");
+	let [source] = importer.getSources();
+	assert.equal(source.getLogUrl(`${INSTAGRAM_API}/me/media?after=cursor&access_token=secret`), `${INSTAGRAM_API}/me/media?after=cursor&access_token=…`);
+});

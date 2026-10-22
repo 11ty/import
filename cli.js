@@ -158,6 +158,9 @@ if(help) {
 
   # Import webmention.io webmentions into post data files (requires WEBMENTION_IO_TOKEN)
   npx @11ty/import webmentions example.com
+
+  # Import Instagram posts and reels (requires INSTAGRAM_ACCESS_TOKEN)
+  npx @11ty/import instagram zachleat
 `);
 
 	process.exit();

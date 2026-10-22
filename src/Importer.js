@@ -23,6 +23,7 @@ import { BlueskyUser } from "./DataSource/BlueskyUser.js";
 import { FediverseUser } from "./DataSource/FediverseUser.js";
 import { Squarespace } from "./DataSource/Squarespace.js";
 import { Twitter } from "./DataSource/Twitter.js";
+import { Instagram } from "./DataSource/Instagram.js";
 import { Substack } from "./DataSource/Substack.js";
 import { Ghost } from "./DataSource/Ghost.js";
 import { JsonFeed } from "./DataSource/JsonFeed.js";
@@ -260,6 +261,8 @@ class Importer {
 				cls = Squarespace;
 			} else if(type === "twitter") {
 				cls = Twitter;
+			} else if(type === "instagram") {
+				cls = Instagram;
 			} else if(type === "substack") {
 				cls = Substack;
 			} else if(type === "ghost") {
