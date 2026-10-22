@@ -8,6 +8,7 @@ import * as entities from "entities";
 
 import { Logger } from "./Logger.js";
 import { DirectoryManager } from "./DirectoryManager.js";
+import { Utils } from "./Utils.js";
 import { WordPressApi } from "./DataSource/WordPressApi.js";
 import { HostedWordPressApi } from "./DataSource/HostedWordPressApi.js";
 
@@ -120,7 +121,7 @@ class MarkdownToHtml {
 		}
 
 		let dir = DirectoryManager.getDirectory(filePath);
-		return path.join(dir, assetPath);
+		return Utils.pathJoin(dir, assetPath);
 	}
 
 	// /small/jpeg/ 375w, /medium/jpeg/ 650w

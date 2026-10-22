@@ -1,4 +1,5 @@
 import kleur from 'kleur';
+import * as entities from "entities";
 import { DateCompare } from "@11ty/eleventy-utils";
 
 import { Logger } from "./Logger.js";
@@ -229,6 +230,11 @@ class DataSource {
 
 			if(entry.dateUpdated && !(entry.dateUpdated instanceof Date)) {
 				entry.dateUpdated = this.toDateObj(entry.dateUpdated);
+			}
+
+			// Titles are plain text but feeds and the WordPress API encode them (e.g. `&#8217;`)
+			if(typeof entry.title === "string") {
+				entry.title = entities.decodeHTML(entry.title);
 			}
 
 			Object.defineProperty(entry, "source", {

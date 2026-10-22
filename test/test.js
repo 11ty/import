@@ -460,3 +460,65 @@ test("Documents that fail to process are counted as errors", async (t) => {
 	assert.equal(entries.length, 0);
 	assert.equal(importer.getCounts().errors, 1);
 });
+
+test("Titles have HTML entities decoded", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	class MySource extends DataSource {
+		static TYPE = "arbitrary";
+		static TYPE_FRIENDLY = "Arbitrary";
+
+		getData() {
+			return [{
+				url: "https://example.com/test/",
+				title: "Don&#8217;t &amp; Caf&eacute; &lt;3",
+			}];
+		}
+	}
+
+	importer.addSource(MySource);
+
+	let [entry] = await importer.getEntries();
+	assert.equal(entry.title, "Don’t & Café <3");
+});
+
+test("File paths use forward slashes on every platform", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setOutputFolder("dist");
+	importer.setAssetReferenceType("colocate");
+
+	class MySource extends DataSource {
+		static TYPE = "arbitrary";
+		static TYPE_FRIENDLY = "Arbitrary";
+
+		getData() {
+			return [{
+				url: "https://example.com/posts/test/",
+			}, {
+				url: "https://example.com/posts/draft/",
+				status: "draft",
+			}];
+		}
+	}
+
+	importer.addSource(MySource);
+	importer.addSource(MySource, {
+		filepathFormat: () => "custom/path/file.md"
+	});
+
+	let entries = await importer.getEntries({ contentType: "markdown" });
+	assert.deepEqual(entries.map(entry => entry.filePath).sort(), [
+		"dist/custom/path/file.md",
+		"dist/custom/path/file.md",
+		"dist/drafts/posts/draft/index.html",
+		"dist/posts/test/index.html",
+	]);
+
+	assert.equal(importer.markdownService.recontextifyRelativeAssetPath("assets/image.png", "dist/posts/test/index.md"), "dist/posts/test/assets/image.png");
+});

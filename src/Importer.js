@@ -1,4 +1,3 @@
-import path from "node:path";
 import fs from "node:fs";
 import { dump } from 'js-yaml'
 import kleur from "kleur";
@@ -11,6 +10,7 @@ import { DirectoryManager } from "./DirectoryManager.js";
 import { MarkdownToHtml } from "./MarkdownToHtml.js";
 import { HtmlTransformer } from "./HtmlTransformer.js";
 import { Persist } from "./Persist.js";
+import { Utils } from "./Utils.js";
 
 // Data Sources
 import { DataSource } from "./DataSource.js";
@@ -426,7 +426,7 @@ class Importer {
 			}
 
 			// does method does *not* add a file extension for you, you must supply one in `filepathFormat` function
-			return path.join(this.#outputFolder, pathname);
+			return Utils.pathJoin(this.#outputFolder, pathname);
 		}
 
 		// WordPress draft posts only have a `p` query param e.g. ?p=ID_NUMBER
@@ -442,7 +442,8 @@ class Importer {
 			subdirs.push(this.#draftsFolder);
 		}
 
-		let pathname = path.join(".", ...subdirs, path.normalize(fallbackPath));
+		// Always uses `/` separators (Windows compatible) so downstream path handling can split on `/`
+		let pathname = Utils.pathJoin(".", ...subdirs, fallbackPath);
 		let extension = contentType === "markdown" ? ".md" : ".html";
 
 		if(pathname.endsWith("/")) {
