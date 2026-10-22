@@ -176,6 +176,7 @@ npx @11ty/import bluesky @11ty.dev
 - `medium` (extracted Medium export folder path)
 - `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
 - `twitter` (Twitter/X archive `.zip` file or extracted folder path)
+- `wayback` (site URL or domain, optionally with a path, from the Internet Archive’s Wayback Machine)
 
 ```sh
 # Import all posts (paid posts are previews unless a subscriber’s `substack.sid` cookie value is supplied in a SUBSTACK_SID environment variable)
@@ -203,6 +204,13 @@ npx @11ty/import rss https://medium.com/feed/@zachleat
 
 # Import tweets (not retweets or replies to others) with media from your archive, threads are comments on the first tweet (Settings → Your account → Download an archive of your data)
 npx @11ty/import twitter ./twitter-2026-01-01.zip
+
+# Import the latest archived copy of every HTML page on a site (or under a path) from the Wayback Machine, with archived assets
+npx @11ty/import wayback example.com
+npx @11ty/import wayback https://example.com/blog/
+
+# Only captures on or before a date (any timestamp prefix: 2022, 202211, 20221120), e.g. before the domain was parked
+npx @11ty/import wayback https://web.archive.org/web/2022/https://example.com/
 ```
 
 ### Comments

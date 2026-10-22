@@ -2337,6 +2337,75 @@ test("Medium export", async (t) => {
 	assert.equal(draft.content, "Draft text.");
 });
 
+test("Wayback Machine", async (t) => {
+	let importer = getImporter();
+	importer.addSource("wayback", "https://web.archive.org/web/2020/http://example.com/blog/?ref=1");
+
+	let cdxUrl = resumeKey => `https://web.archive.org/cdx/search/cdx?url=example.com%2Fblog%2F&matchType=prefix&output=json&fl=urlkey%2Ctimestamp%2Coriginal&filter=statuscode%3A200&collapse=digest&showResumeKey=true&limit=5000&filter=mimetype%3Atext%2Fhtml&to=2020${resumeKey ? `&resumeKey=${resumeKey}` : ""}`;
+	importer.addDataOverride("wayback", cdxUrl(), [
+		["urlkey", "timestamp", "original"],
+		["com,example)/blog/first", "20100101000000", "http://example.com/blog/first"],
+		["com,example)/blog/first", "20150101000000", "http://www.example.com/blog/first/"],
+		["com,example)/blog/search?q=x", "20150101000000", "http://example.com/blog/search?q=x"],
+		[],
+		["next"],
+	]);
+	importer.addDataOverride("wayback", cdxUrl("next"), [
+		["urlkey", "timestamp", "original"],
+		["com,example)/blog/second.html", "20120101000000", "http://example.com/blog/second.html"],
+		["com,example)/blog/missing", "20120101000000", "http://example.com/blog/missing"],
+	]);
+
+	importer.addDataOverride("wayback", "https://web.archive.org/web/20150101000000id_/http://www.example.com/blog/first/", `<!doctype html>
+<html><head>
+	<title>First &amp; best | Example</title>
+	<meta property="og:title" content="First &amp; best">
+	<meta name="description" content="A description">
+	<meta property="og:image" content="/images/cover.png">
+	<meta property="article:tag" content="Web">
+	<script type="application/ld+json">{"@graph":[{"@type":"BlogPosting","datePublished":"2009-12-01T12:00:00Z","dateModified":"2010-02-01T12:00:00Z","author":{"name":"Jane"}}]}</script>
+</head><body>
+	<nav><a href="/">Home</a></nav>
+	<article>
+		<header><h1>First &amp; best</h1></header>
+		<!-- comment -->
+		<p>Hello <a href="../second.html">second</a> and <a href="https://web.archive.org/web/2014/http://other.example/">other</a>.</p>
+		<img data-src="photo.jpg" src="data:image/gif;base64,R0lGOD">
+		<script>alert(1)</script>
+		<footer>Share</footer>
+	</article>
+</body></html>`);
+	importer.addDataOverride("wayback", "https://web.archive.org/web/20120101000000id_/http://example.com/blog/second.html", `<html><head><title>Second | Example</title></head><body><main><h1>Another heading</h1><p>Text</p></main></body></html>`);
+	importer.addDataOverride("wayback", "https://web.archive.org/web/20120101000000id_/http://example.com/blog/missing", new Error("Not found"));
+
+	let [second, first] = await importer.getEntries({ contentType: "html" });
+	assert.equal(importer.getSources()[0].to, "2020");
+
+	assert.equal(first.uuid, "11ty/import::wayback::com,example)/blog/first");
+	assert.equal(first.title, "First & best");
+	assert.equal(first.url, "http://www.example.com/blog/first/");
+	assert.equal(first.filePath, "blog/first.html");
+	assert.equal(first.description, "A description");
+	assert.deepEqual(first.date, new Date("2009-12-01T12:00:00Z"));
+	assert.deepEqual(first.dateUpdated, new Date("2010-02-01T12:00:00Z"));
+	assert.deepEqual(first.authors, [{ name: "Jane" }]);
+	assert.deepEqual(first.tags, ["Web"]);
+	assert.deepEqual(first.metadata, {
+		archiveUrl: "https://web.archive.org/web/20150101000000/http://www.example.com/blog/first/",
+		media: { featuredImage: "https://web.archive.org/web/20150101000000id_/http://www.example.com/images/cover.png" },
+	});
+	// Links to the site are root-relative, the title, navigation, header, footer, scripts, and comments are removed
+	assert.equal(cleanContent(first.content), `<p>Hello <a href="/blog/second.html">second</a> and <a href="http://other.example/">other</a>.</p>
+<img data-src="photo.jpg" src="https://web.archive.org/web/20150101000000id_/http://www.example.com/blog/first/photo.jpg">`);
+
+	assert.equal(second.title, "Another heading");
+	assert.equal(second.filePath, "blog/second.html");
+	// Earliest capture is the fallback date
+	assert.deepEqual(second.date, new Date("2012-01-01T00:00:00Z"));
+	assert.deepEqual(second.authors, []);
+	assert.equal(cleanContent(second.content), "<p>Text</p>");
+});
+
 test("Linktree", async (t) => {
 	let importer = getImporter();
 	importer.addSource("linktree", "@example");
