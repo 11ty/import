@@ -112,6 +112,22 @@ test("Bluesky self-repost duplicates are deduplicated, issue #7", async (t) => {
 	await importer.toFiles(entries);
 });
 
+test("Skip content (front matter only)", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.addSource("bluesky", { url: "zachleat.com", content: false });
+
+	let stubContent = fs.readFileSync("./test/sources/bluesky-test.xml");
+	importer.addDataOverride("bluesky", "https://bsky.app/profile/zachleat.com/rss", Fetcher.parseXml(stubContent.toString("utf8")));
+
+	let [post] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(post.content, "");
+	assert.equal(post.url, "https://bsky.app/profile/zachleat.com/post/3lckusgtkuk2r");
+	assert.equal(post.authors[0].name, "@zachleat.com - Zach Leatherman");
+});
+
 test("WordPress import", async (t) => {
 
 	let importer = new Importer();

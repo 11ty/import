@@ -255,6 +255,8 @@ importer.setAssetReferenceType("relative"); // --assetrefs
 importer.addSource("bluesky", "@11ty.dev");
 // Comments are imported by default
 importer.addSource("wordpress", { url: "https://blog.fontawesome.com", comments: false });
+// Front matter only, no content or comments (e.g. for cross links)
+importer.addSource("youtubeUser", { id: "UCskGTioqrMBcw8pd14_334A", content: false });
 
 // Simple CSS selector (class names only) for preserved elements in Markdown conversion
 importer.addPreserved(".save-this-class-name");

@@ -255,6 +255,7 @@ class Importer {
 		let filepathFormat;
 		let postTypes;
 		let comments;
+		let content;
 
 		if(typeof options === "string") {
 			identifier = options;
@@ -264,6 +265,7 @@ class Importer {
 			filepathFormat = options.filepathFormat;
 			postTypes = options.postTypes;
 			comments = options.comments;
+			content = options.content;
 		}
 
 		if(alias?.getTarget && identifier) {
@@ -304,6 +306,10 @@ class Importer {
 				throw new Error(`The comments option is not supported by the ${source.constructor.TYPE} source type.`);
 			}
 			source.setComments(comments);
+		}
+
+		if(content !== undefined) {
+			source.setContent(content);
 		}
 
 		this.sources.push(source);
@@ -533,8 +539,13 @@ class Importer {
 		let promises = await Promise.allSettled(entries.map(async entry => {
 			await this.fetchRelatedMedia(entry);
 			await this.transformAuthors(entry);
-			await this.transformComments(entry);
-			entry.content = await this.getTransformedContent(entry, outputContentTypeOverride === "markdown");
+
+			if(entry.source?.shouldIncludeContent() === false) {
+				entry.content = "";
+			} else {
+				await this.transformComments(entry);
+				entry.content = await this.getTransformedContent(entry, outputContentTypeOverride === "markdown");
+			}
 
 			if(outputContentTypeOverride === "markdown" && Importer.shouldConvertToMarkdown(entry)) {
 				entry.contentType = "markdown";
