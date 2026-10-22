@@ -34,6 +34,7 @@ import { WaybackMachine } from "./DataSource/WaybackMachine.js";
 import { Typepad } from "./DataSource/Typepad.js";
 import { Hobix } from "./DataSource/Hobix.js";
 import { Linktree } from "./DataSource/Linktree.js";
+import { Npm } from "./DataSource/Npm.js";
 import { Webmentions } from "./DataSource/Webmentions.js";
 
 import pkg from "../package.json" with { type: "json" };
@@ -283,6 +284,8 @@ class Importer {
 				cls = WaybackMachine;
 			} else if(type === "linktree") {
 				cls = Linktree;
+			} else if(type === "npm") {
+				cls = Npm;
 			} else if(type === "webmention" || type === "webmentions") {
 				cls = Webmentions;
 			}

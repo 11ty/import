@@ -190,6 +190,7 @@ npx @11ty/import bluesky @11ty.dev
 - `instagram` (username of a business or creator account, requires an `INSTAGRAM_ACCESS_TOKEN` environment variable for that account from the [Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login))
 - `linktree` (Linktree username or profile URL)
 - `medium` (extracted Medium export folder path)
+- `npm` (npm username or `@scope` organization, packages they maintain)
 - `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
 - `typepad` (Typepad blog URL or domain, optionally with a path, from the Wayback Machine)
 - `hobix` (Hobix blog URL or domain, from the Wayback Machine)
@@ -220,6 +221,10 @@ npx @11ty/import medium ./medium-export
 
 # Recent posts are also available via RSS
 npx @11ty/import rss https://medium.com/feed/@zachleat
+
+# Import a page for each package (README, version, and keywords) a user or organization maintains
+npx @11ty/import npm zachleat
+npx @11ty/import npm @11ty
 
 # Import posts and reels with media (requires INSTAGRAM_ACCESS_TOKEN)
 npx @11ty/import instagram zachleat

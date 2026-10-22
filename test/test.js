@@ -14,6 +14,7 @@ import { MarkdownToHtml } from "../src/MarkdownToHtml.js";
 import { WordPressApi } from "../src/DataSource/WordPressApi.js";
 import { Squarespace } from "../src/DataSource/Squarespace.js";
 import { Rss } from "../src/DataSource/Rss.js";
+import { Npm } from "../src/DataSource/Npm.js";
 import { Archive } from "../src/Archive.js";
 
 function cleanContent(content) {
@@ -3219,4 +3220,77 @@ test("Instagram token isn’t logged", async (t) => {
 	importer.addSource("instagram", "zachleat");
 	let [source] = importer.getSources();
 	assert.equal(source.getLogUrl(`${INSTAGRAM_API}/me/media?after=cursor&access_token=secret`), `${INSTAGRAM_API}/me/media?after=cursor&access_token=…`);
+});
+
+test("npm", async (t) => {
+	let importer = getImporter();
+	importer.addSource("npm", "https://www.npmjs.com/~ZachLeat");
+
+	importer.addDataOverride("npm", "https://registry.npmjs.org/-/user/zachleat/package", { "@11ty/a": "write", b: "write", gone: "write" });
+	importer.addDataOverride("npm", "https://registry.npmjs.org/@11ty%2fa", {
+		name: "@11ty/a",
+		description: "Package A",
+		"dist-tags": { latest: "2.0.0" },
+		time: { created: "2020-01-01T00:00:00.000Z", modified: "2026-01-01T00:00:00.000Z", "2.0.0": "2025-01-01T00:00:00.000Z" },
+		repository: { type: "git", url: "git+https://github.com/11ty/utils.git", directory: "packages/a" },
+		license: "MIT",
+		readme: `# A\n\n![Logo](./logo.png) See [docs](docs/README.md), [usage](#usage), and <img src="https://example.com/x.png">.\n\n## Usage`,
+		versions: {
+			"2.0.0": { keywords: ["eleventy"], author: "Zach Leatherman <zach@example.com> (https://zachleat.com/)", deprecated: "Use b" },
+		},
+	});
+	importer.addDataOverride("npm", "https://registry.npmjs.org/b", {
+		name: "b",
+		description: "Package B & more",
+		"dist-tags": { latest: "1.0.0" },
+		time: { created: "2010-01-01T00:00:00.000Z", "1.0.0": "2010-01-01T00:00:00.000Z" },
+		repository: "gitlab:someone/b",
+		readme: "ERROR: No README data found!",
+		versions: { "1.0.0": {} },
+	});
+	importer.addDataOverride("npm", "https://registry.npmjs.org/gone", {
+		name: "gone",
+		time: { created: "2010-01-01T00:00:00.000Z", unpublished: { time: "2011-01-01T00:00:00.000Z" } },
+	});
+
+	let entries = await importer.getEntries({ contentType: "markdown" });
+	assert.deepEqual(entries.map(entry => entry.filePath), ["@11ty/a.md", "b.md"]);
+
+	let [a, b] = entries;
+	assert.equal(a.uuid, "11ty/import::npm::@11ty/a");
+	assert.equal(a.url, "https://www.npmjs.com/package/@11ty/a");
+	assert.equal(a.title, "@11ty/a");
+	assert.deepEqual(a.date, new Date("2020-01-01T00:00:00.000Z"));
+	assert.deepEqual(a.dateUpdated, new Date("2025-01-01T00:00:00.000Z"));
+	assert.deepEqual(a.authors, [{ name: "Zach Leatherman", url: "https://zachleat.com/" }]);
+	assert.deepEqual(a.tags, ["eleventy"]);
+	assert.deepEqual(a.metadata, {
+		name: "@11ty/a",
+		version: "2.0.0",
+		license: "MIT",
+		repository: "https://github.com/11ty/utils",
+		deprecated: "Use b",
+		tags: ["eleventy"],
+	});
+	// Relative URLs resolve to the repository directory
+	assert.equal(a.content, [
+		"# A",
+		"",
+		"![Logo](https://raw.githubusercontent.com/11ty/utils/HEAD/packages/a/logo.png) See [docs](https://github.com/11ty/utils/blob/HEAD/packages/a/docs/README.md), [usage](#usage), and ![](https://example.com/x.png).",
+		"",
+		"## Usage",
+	].join("\n"));
+
+	// No author falls back to the profile, no README falls back to the description
+	assert.deepEqual(b.authors, [{ name: "zachleat", url: "https://www.npmjs.com/~zachleat" }]);
+	assert.equal(b.metadata.repository, "gitlab:someone/b");
+	assert.equal(b.content, "Package B & more");
+});
+
+test("npm targets", async (t) => {
+	assert.deepEqual(Npm.parseTarget("@11ty"), { name: "11ty", isOrg: true });
+	assert.deepEqual(Npm.parseTarget("https://www.npmjs.com/org/11ty"), { name: "11ty", isOrg: true });
+	assert.deepEqual(Npm.parseTarget("~zachleat"), { name: "zachleat", isOrg: false });
+	assert.equal(Npm.getRepositoryUrl("git@github.com:11ty/eleventy.git"), "https://github.com/11ty/eleventy");
+	assert.equal(Npm.getRepositoryUrl("11ty/eleventy"), "https://github.com/11ty/eleventy");
 });

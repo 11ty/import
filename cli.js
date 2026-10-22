@@ -161,6 +161,10 @@ if(help) {
 
   # Import Instagram posts and reels (requires INSTAGRAM_ACCESS_TOKEN)
   npx @11ty/import instagram zachleat
+
+  # Import npm packages for a user or organization (one page per package README)
+  npx @11ty/import npm zachleat
+  npx @11ty/import npm @11ty
 `);
 
 	process.exit();
