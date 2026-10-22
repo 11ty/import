@@ -9,7 +9,7 @@
 		"./DataSource": "./src/DataSource.js"
 	},
 	"engines": {
-		"node": ">=22"
+		"node": ">=22.12"
 	},
 	"bin": "cli.js",
 	"scripts": {
@@ -33,8 +33,8 @@
 	"license": "MIT",
 	"dependencies": {
 		"@11ty/eleventy-fetch": "^6.0.1",
-		"@11ty/eleventy-utils": "^2.0.7",
-		"@11ty/posthtml-urls": "^1.0.3",
+		"@11ty/eleventy-utils": "^3.0.1",
+		"@11ty/posthtml-urls": "^2.0.0",
 		"@prettier/sync": "^0.6.1",
 		"@sindresorhus/slugify": "^3.0.1",
 		"@zachleat/turndown": "^7.2.0",
