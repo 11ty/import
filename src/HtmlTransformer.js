@@ -12,7 +12,7 @@ class HtmlTransformer {
 		let options = {
 		  eachURL: async (rawUrl, attr, tagName) => {
 				// See https://github.com/11ty/eleventy-posthtml-urls/blob/main/lib/defaultOptions.js
-				if(tagName === "img" || tagName === "video" || tagName === "source" || tagName === "link" || tagName === "script" || tagName === "track") {
+				if(tagName === "img" || tagName === "video" || tagName === "audio" || tagName === "source" || tagName === "link" || tagName === "script" || tagName === "track") {
 					return this.#fetcher.fetchAsset(rawUrl, entry);
 				}
 

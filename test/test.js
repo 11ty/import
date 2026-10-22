@@ -435,6 +435,38 @@ test("RSS guid without attributes", async (t) => {
 	]);
 });
 
+test("RSS audio enclosures and media:content", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	importer.addSource("rss", "https://example.com/feed.xml");
+	importer.addDataOverride("rss", "https://example.com/feed.xml", Fetcher.parseXml(`<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+	<channel>
+		<title>Example</title>
+		<link>https://example.com/</link>
+		<item>
+			<title>Episode</title>
+			<link>https://example.com/episode/</link>
+			<pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+			<description>Episode</description>
+			<enclosure url="https://example.com/episode.mp3" length="1234" type="audio/mpeg"/>
+			<enclosure url="https://example.com/episode.pdf" length="1234" type="application/pdf"/>
+			<media:content url="https://example.com/clip.ogg" type="audio/ogg"/>
+			<media:content url="https://example.com/photo.png" type="image/png" medium="image"/>
+		</item>
+	</channel>
+</rss>`));
+
+	let [entry] = await importer.getEntries();
+	assert.equal(entry.content, `Episode
+<audio controls src="https://example.com/clip.ogg"></audio>
+<img src="https://example.com/photo.png" alt="">
+<audio controls src="https://example.com/episode.mp3"></audio>`);
+});
+
 test("Documents that fail to process are counted as errors", async (t) => {
 	let importer = new Importer();
 

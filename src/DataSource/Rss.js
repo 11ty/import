@@ -51,12 +51,32 @@ export class Rss extends DataSource {
 			'@_medium': 'image'
 			} */
 
-		return mediaSources.filter(source => {
-			// Only supporting images for now
-			return !source["@_medium"] || source["@_medium"] === "image";
-		}).map(source => {
-			return `<img src="${source["@_url"]}" alt="${source["media:description"]?.["#text"] || ""}">`;
-		}).join("\n");
+		return mediaSources.map(source => {
+			if(Rss.isAudio(source)) {
+				return Rss.getAudioHtml(source);
+			}
+			// Only supporting images and audio for now
+			if(!source["@_medium"] || source["@_medium"] === "image") {
+				return `<img src="${source["@_url"]}" alt="${source["media:description"]?.["#text"] || ""}">`;
+			}
+		}).filter(Boolean).join("\n");
+	}
+
+	static isAudio(source) {
+		return source["@_medium"] === "audio" || Boolean(source["@_type"]?.startsWith("audio/"));
+	}
+
+	static getAudioHtml(source) {
+		return `<audio controls src="${source["@_url"]}"></audio>`;
+	}
+
+	// Podcast-style <enclosure url="" length="" type="audio/mpeg">
+	getHtmlFromEnclosures(enclosures) {
+		if(!Array.isArray(enclosures)) {
+			enclosures = [enclosures];
+		}
+
+		return enclosures.filter(enclosure => Rss.isAudio(enclosure)).map(enclosure => Rss.getAudioHtml(enclosure)).join("\n");
 	}
 
 	getRawEntryDates(rawEntry) {
@@ -86,6 +106,10 @@ export class Rss extends DataSource {
 
 		if(rawEntry["media:content"]) {
 			content += `\n${this.getHtmlFromMediaEntry(rawEntry["media:content"])}`;
+		}
+
+		if(rawEntry.enclosure) {
+			content += `\n${this.getHtmlFromEnclosures(rawEntry.enclosure)}`;
 		}
 
 		let { created } = this.getRawEntryDates(rawEntry);
