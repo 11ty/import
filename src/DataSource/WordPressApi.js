@@ -192,14 +192,18 @@ export class WordPressApi extends DataSource {
 			// Warning: extra API call
 			let authorData = await this.getData(this.#getAuthorUrl(authorId), this.getType());
 
-			return [
-				{
-					// _wordpress_author_id: entry.author,
-					name: authorData.name,
-					url: authorData.url || authorData.link,
-					avatarUrl: authorData.avatar_urls[Object.keys(authorData.avatar_urls).pop()],
-				}
-			];
+			let author = {
+				// _wordpress_author_id: entry.author,
+				name: authorData.name,
+				url: authorData.url || authorData.link,
+				avatarUrl: authorData.avatar_urls[Object.keys(authorData.avatar_urls).pop()],
+			};
+
+			if(authorData.slug) {
+				author.slug = authorData.slug;
+			}
+
+			return [author];
 		} catch(e) {
 			// Fetch logs the error upstream
 			return [];
@@ -256,6 +260,13 @@ export class WordPressApi extends DataSource {
 		let status = this.cleanStatus(rawEntry.status)
 
 		let metadata = {};
+		if(rawEntry.id) {
+			metadata.id = rawEntry.id;
+		}
+		if(rawEntry.slug) {
+			metadata.slug = rawEntry.slug;
+		}
+
 		let media = {};
 		let featuredImage = WordPressApi.getFeaturedImageUrl(rawEntry);
 		if(featuredImage) {

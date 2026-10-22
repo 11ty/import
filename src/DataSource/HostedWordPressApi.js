@@ -54,13 +54,17 @@ export class HostedWordPressApi extends DataSource {
 
 	// stock WordPress is single-author
 	#getAuthorData(author) {
-		return [
-			{
-				name: author.name,
-				url: author.profile_URL,
-				avatarUrl: author.avatar_URL,
-			}
-		];
+		let authorData = {
+			name: author.name,
+			url: author.profile_URL,
+			avatarUrl: author.avatar_URL,
+		};
+
+		if(author.nice_name) {
+			authorData.slug = author.nice_name;
+		}
+
+		return [authorData];
 	}
 
 	getRawEntryDates(rawEntry) {
@@ -75,6 +79,13 @@ export class HostedWordPressApi extends DataSource {
 			categories: Object.keys(rawEntry.categories),
 			tags: Object.keys(rawEntry.tags),
 		};
+
+		if(rawEntry.ID) {
+			metadata.id = rawEntry.ID;
+		}
+		if(rawEntry.slug) {
+			metadata.slug = rawEntry.slug;
+		}
 
 		if(rawEntry.featured_image) {
 			metadata.media = {

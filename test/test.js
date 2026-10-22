@@ -167,6 +167,9 @@ We’ll keep fine-tuning that sweet, sweet recipe until February. Believe us; th
 
 	assert.equal(post.content.length, 1634);
 	assert.equal(post.authors[0].name, "Matt Johnson");
+	assert.equal(post.authors[0].slug, "iamthedayofcurrenttaste");
+	assert.equal(post.metadata.id, 3829);
+	assert.equal(post.metadata.slug, "font-awesome-6");
 	assert.equal(post.description, "We’re so close to launching version 6, and we figured it was high time to make an official announcement. So, save the date for February. Font Awesome 6 will go beyond pure icon-imagination! So, what’s new? More Icons Font Awesome 6 contains over 7,000 new icons, so you’re sure to find what you need for […]");
 	assert.equal(post.metadata.media.featuredImage, "https://i0.wp.com/blog.fontawesome.com/wp-content/uploads/2021/12/image-save-the-date.png?fit=1920%2C1080&ssl=1");
 	assert.equal(post.metadata.media.opengraphImage, "https://blog.fontawesome.com/wp-content/uploads/2021/12/image-save-the-date.png");
