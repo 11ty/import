@@ -18,6 +18,7 @@ import { YouTubeUser } from "./DataSource/YouTubeUser.js";
 import { Atom } from "./DataSource/Atom.js";
 import { Rss } from "./DataSource/Rss.js";
 import { WordPressApi } from "./DataSource/WordPressApi.js";
+import { WordPressXml } from "./DataSource/WordPressXml.js";
 import { BlueskyUser } from "./DataSource/BlueskyUser.js";
 import { FediverseUser } from "./DataSource/FediverseUser.js";
 
@@ -180,6 +181,8 @@ class Importer {
 				cls = Rss;
 			} else if(type === "wordpress") {
 				cls = WordPressApi;
+			} else if(type === "wordpressxml") {
+				cls = WordPressXml;
 			} else if(type === "bluesky") {
 				cls = BlueskyUser; // RSS
 			} else if(type === "fediverse") {

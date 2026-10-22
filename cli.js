@@ -127,6 +127,7 @@ if(help) {
 
   # WordPress post types to import (default: posts,pages)
   npx @11ty/import wordpress [target] --posttypes=posts,pages,product
+  npx @11ty/import wordpressxml [file] --posttypes=posts,pages,product
 `);
 
 	process.exit();

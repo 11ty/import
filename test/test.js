@@ -1159,3 +1159,44 @@ test("File paths use forward slashes on every platform", async (t) => {
 
 	assert.equal(importer.markdownService.recontextifyRelativeAssetPath("assets/image.png", "dist/posts/test/index.md"), "dist/posts/test/assets/image.png");
 });
+
+test("WordPress XML export", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("wordpressxml", "./test/sources/wordpress-export.xml");
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	// Sorted by date, newest first
+	assert.deepEqual(entries.map(entry => entry.title), ["Classic", "Block & Editor", "About"]);
+
+	let [draft, post, page] = entries;
+	assert.equal(post.uuid, "11ty/import::wordpress::https://example.com/?p=10");
+	assert.equal(post.content, "<p>Hello <strong>world</strong>.</p>");
+	assert.deepEqual(post.authors, [{ name: "Zach Leatherman", slug: "zachleat" }]);
+	assert.equal(post.date.toISOString(), "2024-01-02T08:04:05.000Z");
+	assert.equal(post.dateUpdated.toISOString(), "2024-02-02T08:04:05.000Z");
+	assert.equal(post.description, "A short excerpt.");
+	assert.deepEqual(post.tags, ["News & Notes"]);
+	assert.deepEqual(post.metadata.tags, ["Eleventy"]);
+	assert.equal(post.metadata.id, 10);
+	assert.equal(post.metadata.slug, "block-editor");
+	assert.equal(post.metadata.media.featuredImage, "https://example.com/wp-content/uploads/2024/01/header.png");
+	assert.equal(post.filePath, "block-editor.html");
+
+	assert.equal(draft.status, "draft");
+	assert.equal(draft.date.toISOString(), "2024-03-01T00:00:00.000Z");
+	assert.equal(draft.content, "<p>First paragraph<br>\nstill first.</p>\n<p>Second paragraph.</p>");
+	assert.equal(draft.metadata.slug, undefined);
+
+	assert.equal(page.metadata.postType, "page");
+
+	let postsOnly = new Importer();
+	postsOnly.setVerbose(false);
+	postsOnly.setDryRun(true);
+	postsOnly.addSource("wordpressxml", { url: "./test/sources/wordpress-export.xml", postTypes: "posts" });
+	assert.equal((await postsOnly.getEntries({ contentType: "html" })).length, 2);
+});

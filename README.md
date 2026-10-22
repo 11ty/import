@@ -77,6 +77,7 @@ npx @11ty/import [type] [target] --persist=github:zachleat/wp-awesome
 - `fediverse` (username)
 - `rss` (URL)
 - `wordpress` (blog home page URL, discovers the site’s own REST API or falls back to the WordPress.com API)
+- `wordpressxml` (WordPress export file path or URL)
 - `youtubeuser` (user id)
 
 #### YouTube
@@ -100,6 +101,9 @@ npx @11ty/import wordpress https://blog.fontawesome.com --posttypes=posts,pages,
 # WordPress.com sites (including custom domains) work the same way
 # Draft posts available when a WORDPRESSDOTCOM_TOKEN (OAuth2 access token) environment variable is supplied
 npx @11ty/import wordpress https://en.blog.wordpress.com
+
+# Import published and draft posts and pages from a WordPress export file (Tools → Export)
+npx @11ty/import wordpressxml ./example.WordPress.2024-01-01.xml --posttypes=posts,pages,product
 ```
 
 #### Atom Feeds

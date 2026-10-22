@@ -222,7 +222,7 @@ class DataSource {
 				}
 			}
 		} else if(typeof this.getData === "function") {
-			let data = this.getData() || {};
+			let data = await this.getData() || {};
 			for(let entry of await this.getCleanedEntries(data) || []) {
 				entries.push(entry);
 			}

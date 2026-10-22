@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0" xmlns:excerpt="http://wordpress.org/export/1.2/excerpt/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:wp="http://wordpress.org/export/1.2/">
+<channel>
+	<title>Example</title>
+	<link>https://example.com</link>
+	<wp:base_blog_url>https://example.com</wp:base_blog_url>
+	<wp:author><wp:author_id>1</wp:author_id><wp:author_login><![CDATA[zachleat]]></wp:author_login><wp:author_display_name><![CDATA[Zach Leatherman]]></wp:author_display_name></wp:author>
+	<item>
+		<title><![CDATA[header]]></title>
+		<link>https://example.com/header/</link>
+		<guid isPermaLink="false">https://example.com/wp-content/uploads/2024/01/header.png</guid>
+		<wp:post_id>9</wp:post_id>
+		<wp:status><![CDATA[inherit]]></wp:status>
+		<wp:post_type><![CDATA[attachment]]></wp:post_type>
+		<wp:attachment_url><![CDATA[https://example.com/wp-content/uploads/2024/01/header.png]]></wp:attachment_url>
+	</item>
+	<item>
+		<title><![CDATA[Block &amp; Editor]]></title>
+		<link>https://example.com/block-editor/</link>
+		<dc:creator><![CDATA[zachleat]]></dc:creator>
+		<guid isPermaLink="false">https://example.com/?p=10</guid>
+		<content:encoded><![CDATA[<!-- wp:paragraph -->
+<p>Hello <strong>world</strong>.</p>
+<!-- /wp:paragraph -->]]></content:encoded>
+		<excerpt:encoded><![CDATA[A short excerpt.]]></excerpt:encoded>
+		<wp:post_id>10</wp:post_id>
+		<wp:post_date><![CDATA[2024-01-02 03:04:05]]></wp:post_date>
+		<wp:post_date_gmt><![CDATA[2024-01-02 08:04:05]]></wp:post_date_gmt>
+		<wp:post_modified><![CDATA[2024-02-02 03:04:05]]></wp:post_modified>
+		<wp:post_modified_gmt><![CDATA[2024-02-02 08:04:05]]></wp:post_modified_gmt>
+		<wp:post_name><![CDATA[block-editor]]></wp:post_name>
+		<wp:status><![CDATA[publish]]></wp:status>
+		<wp:post_type><![CDATA[post]]></wp:post_type>
+		<category domain="category" nicename="uncategorized"><![CDATA[Uncategorized]]></category>
+		<category domain="category" nicename="news"><![CDATA[News &amp; Notes]]></category>
+		<category domain="post_tag" nicename="eleventy"><![CDATA[Eleventy]]></category>
+		<wp:postmeta>
+			<wp:meta_key><![CDATA[_thumbnail_id]]></wp:meta_key>
+			<wp:meta_value><![CDATA[9]]></wp:meta_value>
+		</wp:postmeta>
+	</item>
+	<item>
+		<title><![CDATA[Classic]]></title>
+		<link>https://example.com/?p=11</link>
+		<dc:creator><![CDATA[zachleat]]></dc:creator>
+		<guid isPermaLink="false">https://example.com/?p=11</guid>
+		<content:encoded><![CDATA[First paragraph
+still first.
+
+Second paragraph.]]></content:encoded>
+		<wp:post_id>11</wp:post_id>
+		<wp:post_date><![CDATA[2024-03-01 00:00:00]]></wp:post_date>
+		<wp:post_date_gmt><![CDATA[0000-00-00 00:00:00]]></wp:post_date_gmt>
+		<wp:post_name><![CDATA[]]></wp:post_name>
+		<wp:status><![CDATA[draft]]></wp:status>
+		<wp:post_type><![CDATA[post]]></wp:post_type>
+	</item>
+	<item>
+		<title><![CDATA[Trashed]]></title>
+		<link>https://example.com/trashed/</link>
+		<guid isPermaLink="false">https://example.com/?p=12</guid>
+		<wp:post_id>12</wp:post_id>
+		<wp:status><![CDATA[trash]]></wp:status>
+		<wp:post_type><![CDATA[post]]></wp:post_type>
+	</item>
+	<item>
+		<title><![CDATA[About]]></title>
+		<link>https://example.com/about/</link>
+		<guid isPermaLink="false">https://example.com/?page_id=13</guid>
+		<content:encoded><![CDATA[<p>About page.</p>]]></content:encoded>
+		<wp:post_id>13</wp:post_id>
+		<wp:post_date_gmt><![CDATA[2024-01-01 00:00:00]]></wp:post_date_gmt>
+		<wp:post_name><![CDATA[about]]></wp:post_name>
+		<wp:status><![CDATA[publish]]></wp:status>
+		<wp:post_type><![CDATA[page]]></wp:post_type>
+	</item>
+</channel>
+</rss>
