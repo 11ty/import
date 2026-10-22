@@ -82,6 +82,26 @@ Pure vibes: &lt;noscript&gt;`);
 	assert.equal(post.authors[0].name, "@zachleat.com - Zach Leatherman");
 });
 
+test("Bluesky self-repost duplicates are deduplicated, issue #7", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	importer.addSource("bluesky", "zachleat.com");
+
+	let stubContent = fs.readFileSync("./test/sources/bluesky-test.xml").toString("utf8");
+	let item = stubContent.slice(stubContent.indexOf("<item>"), stubContent.indexOf("</item>") + "</item>".length);
+	stubContent = stubContent.replace(item, item + item);
+
+	importer.addDataOverride("bluesky", "https://bsky.app/profile/zachleat.com/rss", Fetcher.parseXml(stubContent));
+
+	let entries = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(entries.length, 1);
+
+	await importer.toFiles(entries);
+});
+
 test("WordPress import", async (t) => {
 
 	let importer = new Importer();

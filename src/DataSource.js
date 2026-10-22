@@ -216,9 +216,21 @@ class DataSource {
 			}
 		}
 
-		return entries.map(entry => {
-			// TODO check uuid uniqueness
+		// Feeds can list the same entry more than once (e.g. a Bluesky self-repost), keep the first
+		let seen = new Set();
+		entries = entries.filter(entry => {
+			let key = entry.uuid || entry.url;
+			if(!key) {
+				return true;
+			}
+			if(seen.has(key)) {
+				return false;
+			}
+			seen.add(key);
+			return true;
+		});
 
+		return entries.map(entry => {
 			if(this.label) {
 				entry.sourceLabel = this.label;
 			}
