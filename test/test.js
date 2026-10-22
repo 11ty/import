@@ -344,6 +344,44 @@ test("Hosted WordPress with a custom domain and post types, issue #16", async (t
 	assert.deepEqual(entries[1].metadata.categories, []);
 });
 
+test("Author avatars are downloaded as assets", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	let author = { name: "Zach", avatarUrl: "https://example.com/avatar.png" };
+
+	class MySource extends DataSource {
+		static TYPE = "arbitrary";
+
+		getData() {
+			return [{
+				url: "https://example.com/one/",
+				content: "One",
+				contentType: "text",
+				authors: [author],
+			}, {
+				url: "https://example.com/two/",
+				content: "Two",
+				contentType: "text",
+				authors: [author, { name: "No avatar" }],
+			}];
+		}
+	}
+
+	importer.addSource(MySource);
+	importer.fetcher.fetchAsset = async (url, entry) => `assets/${new URL(url).pathname.slice(1)}`;
+
+	let entries = await importer.getEntries({ contentType: "markdown" });
+	assert.deepEqual(entries.map(entry => entry.authors), [
+		[{ name: "Zach", avatarUrl: "assets/avatar.png" }],
+		[{ name: "Zach", avatarUrl: "assets/avatar.png" }, { name: "No avatar" }],
+	]);
+	// shared author objects aren’t mutated
+	assert.equal(author.avatarUrl, "https://example.com/avatar.png");
+});
+
 test("postTypes is not supported by other source types", async (t) => {
 	let importer = new Importer();
 
