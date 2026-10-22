@@ -1861,15 +1861,23 @@ for(let archivePath of [TWITTER_FOLDER, TWITTER_ZIP]) {
 		importer.addSource("twitter", archivePath);
 
 		let entries = await importer.getEntries({ contentType: "markdown" });
-		// Retweets and replies to others are skipped
-		assert.deepEqual(entries.map(entry => entry.metadata.id), ["2006", "2003", "2002", "2001"]);
+		// Retweets and replies to others are skipped, replies to yourself are comments
+		assert.deepEqual(entries.map(entry => entry.metadata.id), ["2008", "2006", "2002", "2001"]);
 
-		let [part1, reply, media, text] = entries;
+		let [deletedParent, part1, media, text] = entries;
 		assert.equal(part1.filePath, "zachleat/2006.md");
 		assert.equal(part1.content, "From the second part");
+		assert.equal(part1.comments, undefined);
 
-		assert.equal(reply.metadata.inReplyTo, "https://x.com/zachleat/status/2002");
-		assert.equal(reply.content, "Continuing the thread");
+		// Parent isn’t in the archive
+		assert.equal(deletedParent.metadata.inReplyTo, "https://x.com/zachleat/status/1999");
+		assert.equal(deletedParent.content, "Reply to a deleted tweet");
+
+		let author = { name: "Zach Leatherman", url: "https://x.com/zachleat", avatarUrl: "https://pbs.twimg.com/profile_images/1/avatar.jpg" };
+		assert.deepEqual(media.comments, [
+			{ id: "2003", parentId: 0, url: "https://x.com/zachleat/status/2003", author, date: new Date("2018-10-12T20:19:24.000Z"), content: "<p>Continuing the thread</p>" },
+			{ id: "2007", parentId: "2003", url: "https://x.com/zachleat/status/2007", author, date: new Date("2018-10-16T20:19:24.000Z"), content: `<p>Thread photo</p>\n<p><img src="https://pbs.twimg.com/media/Photo2.jpg" alt=""></p>` },
+		]);
 
 		assert.equal(text.uuid, "11ty/import::twitter::2001");
 		assert.equal(text.type, "twitter");
@@ -1887,6 +1895,38 @@ for(let archivePath of [TWITTER_FOLDER, TWITTER_ZIP]) {
 			// Archived video variant is preferred over the highest bitrate
 			`<video controls="" src="https://video.twimg.com/ext_tw_video/3/pu/vid/640x360/Small.mp4?tag=10" poster="https://pbs.twimg.com/ext_tw_video_thumb/3/pu/img/Poster.jpg"></video>`,
 		].join("\n"));
+	});
+
+	test(`Twitter archive without comments (${archivePath})`, async (t) => {
+		let importer = new Importer();
+		importer.setVerbose(false);
+		importer.setDryRun(true);
+		importer.setAssetReferenceType("disabled");
+
+		importer.addSource("twitter", { url: archivePath, comments: false });
+
+		let entries = await importer.getEntries({ contentType: "markdown" });
+		assert.deepEqual(entries.map(entry => entry.metadata.id), ["2008", "2007", "2006", "2003", "2002", "2001"]);
+		assert.equal(entries[3].metadata.inReplyTo, "https://x.com/zachleat/status/2002");
+		assert.ok(entries.every(entry => !entry.comments));
+	});
+
+	test(`Twitter archive thread media (${archivePath})`, async (t) => {
+		let importer = new Importer();
+		importer.setVerbose(false);
+		importer.setDryRun(true);
+		importer.setAssetReferenceType("relative");
+
+		importer.addSource("twitter", archivePath);
+
+		let [source] = importer.getSources();
+		let entry = (await source.getEntries()).find(entry => entry.metadata.id === "2002");
+		entry.filePath = "zachleat/2002.md";
+
+		await importer.transformComments(entry);
+		let [first, second] = entry.comments;
+		assert.match(first.author.avatarUrl, /^assets\/avatar-\w+\.jpg$/);
+		assert.match(second.content, /<img src="assets\/Photo2-\w+\.jpg" alt="">/);
 	});
 
 	test(`Twitter archive local media (${archivePath})`, async (t) => {

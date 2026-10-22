@@ -414,6 +414,23 @@ class Importer {
 		}
 	}
 
+	async transformComments(entry) {
+		if(!entry.source?.constructor.COMMENT_ASSETS || !Array.isArray(entry.comments)) {
+			return;
+		}
+
+		entry.comments = await Promise.all(entry.comments.map(async comment => {
+			let transformed = { ...comment };
+			if(comment.content) {
+				transformed.content = await this.htmlTransformer.transform(comment.content, entry);
+			}
+			if(comment.author?.avatarUrl) {
+				transformed.author = { ...comment.author, avatarUrl: await this.fetcher.fetchAsset(comment.author.avatarUrl, entry) };
+			}
+			return transformed;
+		}));
+	}
+
 	async getTransformedContent(entry, isWritingToMarkdown) {
 		let content = entry.content;
 
@@ -510,6 +527,7 @@ class Importer {
 		let promises = await Promise.allSettled(entries.map(async entry => {
 			await this.fetchRelatedMedia(entry);
 			await this.transformAuthors(entry);
+			await this.transformComments(entry);
 			entry.content = await this.getTransformedContent(entry, outputContentTypeOverride === "markdown");
 
 			if(outputContentTypeOverride === "markdown" && Importer.shouldConvertToMarkdown(entry)) {

@@ -11,12 +11,16 @@ export class Twitter extends DataSource {
 	static TWEETS_FILE = /^data\/tweets?(?:-part\d+)?\.js$/;
 	static MEDIA_FOLDER = /^data\/(?:tweets?|profile)_media\/\d+-(.+)$/;
 	static ENTITY_PATTERN = /https:\/\/t\.co\/\w+|@\w{1,15}/g;
+	// Your own replies in a thread are comments on the first tweet
+	static SUPPORTS_COMMENTS = true;
+	static COMMENT_ASSETS = true;
 
 	#archive;
 	#account = {};
 	#avatarUrl;
 	// Archive media files by remote filename (`data/tweets_media/{tweetId}-{filename}`)
 	#media = new Map();
+	#threadReplies = new Map();
 
 	constructor(path) {
 		super();
@@ -97,12 +101,41 @@ export class Twitter extends DataSource {
 
 	// Retweets and replies to other accounts are skipped (replies to yourself are threads)
 	getEntriesFromData(tweets) {
-		return tweets.filter(tweet => {
+		tweets = tweets.filter(tweet => {
 			if((tweet.full_text || tweet.text || "").startsWith("RT @")) {
 				return false;
 			}
 
 			return !tweet.in_reply_to_user_id_str || tweet.in_reply_to_user_id_str === this.#account.accountId;
+		});
+
+		if(!this.shouldIncludeComments()) {
+			return tweets;
+		}
+
+		// Thread root is the first tweet in the archive (a reply to a deleted tweet starts its own thread)
+		let byId = new Map(tweets.map(tweet => [tweet.id_str, tweet]));
+		let getRoot = tweet => {
+			let seen = new Set();
+			while(byId.has(tweet.in_reply_to_status_id_str) && !seen.has(tweet.id_str)) {
+				seen.add(tweet.id_str);
+				tweet = byId.get(tweet.in_reply_to_status_id_str);
+			}
+			return tweet;
+		};
+
+		this.#threadReplies.clear();
+		return tweets.filter(tweet => {
+			let root = getRoot(tweet);
+			if(root === tweet) {
+				return true;
+			}
+
+			if(!this.#threadReplies.has(root.id_str)) {
+				this.#threadReplies.set(root.id_str, []);
+			}
+			this.#threadReplies.get(root.id_str).push(tweet);
+			return false;
 		});
 	}
 
@@ -186,7 +219,7 @@ export class Twitter extends DataSource {
 		return html.join("\n");
 	}
 
-	cleanEntry(tweet) {
+	#getAuthor() {
 		let author = {
 			name: this.#account.accountDisplayName || this.#account.username,
 			url: `https://x.com/${this.#getUsername()}`,
@@ -194,6 +227,25 @@ export class Twitter extends DataSource {
 		if(this.#avatarUrl) {
 			author.avatarUrl = this.#avatarUrl;
 		}
+		return author;
+	}
+
+	#getComments(root) {
+		return DataSource.sortComments((this.#threadReplies.get(root.id_str) || []).map(tweet => {
+			let parentId = tweet.in_reply_to_status_id_str;
+			return DataSource.cleanComment({
+				id: tweet.id_str,
+				parentId: parentId === root.id_str ? 0 : parentId,
+				url: this.#getTweetUrl(tweet.id_str),
+				author: this.#getAuthor(),
+				date: this.getRawEntryDates(tweet).created,
+				content: this.getContent(tweet),
+			});
+		}));
+	}
+
+	cleanEntry(tweet) {
+		let author = this.#getAuthor();
 
 		let metadata = {
 			id: tweet.id_str,
@@ -204,7 +256,7 @@ export class Twitter extends DataSource {
 
 		let { created } = this.getRawEntryDates(tweet);
 
-		return {
+		let cleanEntry = {
 			uuid: this.getUniqueIdFromEntry(tweet),
 			type: Twitter.TYPE,
 			title: this.toReadableDate(created),
@@ -215,5 +267,14 @@ export class Twitter extends DataSource {
 			contentType: "html",
 			metadata,
 		};
+
+		if(this.shouldIncludeComments()) {
+			let comments = this.#getComments(tweet);
+			if(comments.length) {
+				cleanEntry.comments = comments;
+			}
+		}
+
+		return cleanEntry;
 	}
 }

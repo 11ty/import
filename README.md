@@ -197,7 +197,7 @@ npx @11ty/import medium ./medium-export
 # Recent posts are also available via RSS
 npx @11ty/import rss https://medium.com/feed/@zachleat
 
-# Import tweets and threads (not retweets or replies to others) with media from your archive (Settings → Your account → Download an archive of your data)
+# Import tweets (not retweets or replies to others) with media from your archive, threads are comments on the first tweet (Settings → Your account → Download an archive of your data)
 npx @11ty/import twitter ./twitter-2026-01-01.zip
 ```
 
@@ -216,6 +216,7 @@ Comments with content warnings or from authors that opted out of wider distribut
 - `youtubeuser`: requires a `YOUTUBE_API_KEY` environment variable ([YouTube Data API](https://developers.google.com/youtube/v3/getting-started))
 - `bluesky`: replies (private when labeled or the author discourages showing their account to logged-out users)
 - `fediverse`: public and unlisted replies known to the user’s server (private when unlisted, marked sensitive, or the author opted out of search engine indexing)
+- `twitter`: your own replies in a thread, as comments on its first tweet (with local media)
 - `rss`, `atom`: per-post comment feeds (`wfw:commentRss` or `<link rel="replies">`), when available
 
 Skip comments with `importer.addSource(type, { url, comments: false })`.

@@ -9,6 +9,8 @@ class DataSource {
 	static UUID_PREFIX = "11ty/import";
 	// Sources set `entry.comments` in `cleanEntry` or fetch them in `addComments(entries)`
 	static SUPPORTS_COMMENTS = false;
+	// Downloads assets in comment content and avatars (e.g. your own media in a thread)
+	static COMMENT_ASSETS = false;
 
 	#fetcher;
 	#includeComments = true;
