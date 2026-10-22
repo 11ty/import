@@ -31,6 +31,7 @@ export class BlueskyUser extends Rss {
 		let obj = super.cleanEntry(entry, data);
 		obj.type = BlueskyUser.TYPE;
 		obj.contentType = "text";
+		obj.metadata = { ...obj.metadata, slug: path.basename(BlueskyUser.getFilePath(obj.url)) };
 
 		return obj;
 	}

@@ -60,7 +60,10 @@ export class YouTubeUser extends DataSource {
 			dateUpdated: updated,
 			content: DataSource.textToParagraphs(String(rawEntry['media:group']?.['media:description'] ?? "")),
 			contentType: "html",
-			...(featuredImage ? { metadata: { media: { featuredImage } } } : {}),
+			metadata: {
+				slug: rawEntry['yt:videoId'],
+				...(featuredImage ? { media: { featuredImage } } : {}),
+			},
 		}
 	}
 

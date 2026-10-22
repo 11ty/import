@@ -47,6 +47,7 @@ export class FediverseUser extends Rss {
 		let obj = super.cleanEntry(entry, data);
 		obj.type = FediverseUser.TYPE;
 		obj.contentType = "html";
+		obj.metadata = { ...obj.metadata, slug: FediverseUser.parseFromUrl(obj.url).postId };
 
 		return obj;
 	}

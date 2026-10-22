@@ -249,6 +249,7 @@ export class Twitter extends DataSource {
 
 		let metadata = {
 			id: tweet.id_str,
+			slug: tweet.id_str,
 		};
 		if(tweet.in_reply_to_status_id_str) {
 			metadata.inReplyTo = this.#getTweetUrl(tweet.in_reply_to_status_id_str);

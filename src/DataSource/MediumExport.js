@@ -85,7 +85,7 @@ export class MediumExport extends DataSource {
 			content: MediumExport.getContent(html),
 			contentType: "html",
 			status: MediumExport.isDraft(filename) ? "draft" : "publish",
-			metadata: { id },
+			metadata: { id, slug: id },
 		};
 
 		let description = DataSource.htmlToPlainText(MediumExport.match(html, /<section data-field="subtitle" class="p-summary">([\s\S]*?)<\/section>/));

@@ -42,6 +42,7 @@ test("YouTube user", async (t) => {
 
 	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "dateUpdated", "filePath", "metadata", "outputContentType", "title", "type", "url", "uuid"]);
 	assert.equal(post.metadata.media.featuredImage, "https://i4.ytimg.com/vi/kNI_LcbvtNk/hqdefault.jpg");
+	assert.equal(post.metadata.slug, "kNI_LcbvtNk");
 	assert.equal(post.contentType, "markdown");
 	assert.ok(!post.content.includes("<iframe"));
 	assert.ok(post.content.includes(`CloudCannon is the Recommended CMS Partner of 11ty:
@@ -76,7 +77,8 @@ test("Bluesky posts", async (t) => {
 
 	let [post] = entries;
 
-	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "filePath", "outputContentType", "title", "type", "url", "uuid"]);
+	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "filePath", "metadata", "outputContentType", "title", "type", "url", "uuid"]);
+	assert.equal(post.metadata.slug, post.url.split("/").pop());
 	assert.equal(post.content.length, 323);
 	assert.equal(post.content, `time to review my HTML wrapped 2024
 
@@ -1613,6 +1615,7 @@ test("Fediverse replies", async (t) => {
 	});
 
 	let [entry] = await importer.getEntries();
+	assert.equal(entry.metadata.slug, "111");
 	let [first, warning, unlisted, noindex] = entry.comments;
 	assert.deepEqual([first.id, first.parentId, first.author.name], ["222", 0, "jane@mastodon.social"]);
 	assert.equal(first.content, "<p>Hi!</p>");
@@ -1881,6 +1884,7 @@ for(let archivePath of [TWITTER_FOLDER, TWITTER_ZIP]) {
 		let entries = await importer.getEntries({ contentType: "markdown" });
 		// Retweets and replies to others are skipped, replies to yourself are comments
 		assert.deepEqual(entries.map(entry => entry.metadata.id), ["2008", "2006", "2002", "2001"]);
+		assert.deepEqual(entries.map(entry => entry.metadata.slug), ["2008", "2006", "2002", "2001"]);
 
 		let [deletedParent, part1, media, text] = entries;
 		assert.equal(part1.filePath, "zachleat/2006.md");
@@ -2343,7 +2347,7 @@ test("Medium export", async (t) => {
 	assert.equal(post.status, "publish");
 	assert.deepEqual(post.date, new Date("2024-01-15T18:30:00.000Z"));
 	assert.deepEqual(post.authors, [{ name: "Zach Leatherman", url: "https://medium.com/@zachleat" }]);
-	assert.deepEqual(post.metadata, { id: "0123456789ab" });
+	assert.deepEqual(post.metadata, { id: "0123456789ab", slug: "0123456789ab" });
 	// The title and subtitle repeated in the body are removed
 	assert.equal(post.content, "* * *\n\nFirst **paragraph**.\n\n![](https://cdn-images-1.medium.com/max/800/1*abc.png)");
 
