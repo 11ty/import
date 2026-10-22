@@ -30,6 +30,7 @@ class Importer {
 	#draftsFolder = "drafts";
 	#outputFolder = ".";
 	#assetReferenceType;
+	#documentErrors = 0;
 
 	constructor() {
 		this.startTime = new Date();
@@ -62,11 +63,13 @@ class Importer {
 	}
 
 	getCounts() {
+		let fetcherCounts = this.fetcher.getCounts();
 		return {
 			...this.counts,
-			...this.fetcher.getCounts(),
+			...fetcherCounts,
 			...this.markdownService.getCounts(),
-			...this.persistManager.getCounts()
+			...this.persistManager.getCounts(),
+			errors: fetcherCounts.errors + this.#documentErrors,
 		}
 	}
 
@@ -377,9 +380,16 @@ class Importer {
 			this.markdownService.cleanup();
 		}
 
-		return promises.filter(entry => {
+		return promises.filter((entry, index) => {
 			// Documents with errors
-			return entry.status !== "rejected";
+			if(entry.status === "rejected") {
+				this.#documentErrors++;
+				if(this.isVerbose) {
+					Logger.error(`Error processing document ${entries[index].url}: ${entry.reason?.message}`);
+				}
+				return false;
+			}
+			return true;
 		}).map(entry => {
 			return entry.value;
 		}).sort((a, b) => {

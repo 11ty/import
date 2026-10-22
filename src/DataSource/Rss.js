@@ -30,7 +30,9 @@ export class Rss extends DataSource {
 	}
 
 	getUniqueIdFromEntry(entry) {
-		return `${DataSource.UUID_PREFIX}::${Rss.TYPE}::${entry.guid["#text"]}`;
+		// <guid> is parsed as a plain value (not an object) when it has no attributes
+		let id = entry.guid?.["#text"] ?? entry.guid ?? entry.link;
+		return `${DataSource.UUID_PREFIX}::${Rss.TYPE}::${id}`;
 	}
 
 	getHtmlFromMediaEntry(mediaSources) {

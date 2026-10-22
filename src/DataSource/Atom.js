@@ -54,7 +54,7 @@ export class Atom extends DataSource {
 	cleanEntry(rawEntry, data) {
 		let authors = [];
 		if(Array.isArray(rawEntry?.author)) {
-			authors = rawEntry.author.map(author => ({ name: author }));
+			authors = rawEntry.author.map(author => ({ name: author?.name ?? author }));
 		} else {
 			authors.push({
 				name: rawEntry?.author?.name || data.feed?.author?.name,
@@ -62,6 +62,10 @@ export class Atom extends DataSource {
 		}
 
 		let { created, updated } = this.getRawEntryDates(rawEntry);
+
+		// Parsed as a plain value (not an object) when <content> has no attributes
+		let content = rawEntry.content;
+		let hasAttributes = typeof content === "object" && content !== null;
 
 		return {
 			uuid: this.getUniqueIdFromEntry(rawEntry),
@@ -71,8 +75,8 @@ export class Atom extends DataSource {
 			authors,
 			date: created,
 			dateUpdated: updated,
-			content: rawEntry.content["#text"],
-			contentType: rawEntry.content["@_type"],
+			content: hasAttributes ? content["#text"] : content,
+			contentType: hasAttributes ? content["@_type"] : undefined,
 		}
 	}
 }

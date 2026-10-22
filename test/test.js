@@ -349,3 +349,114 @@ test("within no", async (t) => {
 	});
 	assert.equal(entries.length, 0);
 });
+
+test("dateUpdated strings are parsed from dateUpdated, not date", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	class MySource extends DataSource {
+		static TYPE = "arbitrary";
+		static TYPE_FRIENDLY = "Arbitrary";
+
+		getData() {
+			return [{
+				url: "https://example.com/test/",
+				date: "2020-01-01T00:00:00Z",
+				dateUpdated: "2021-06-15T00:00:00Z",
+			}];
+		}
+	}
+
+	importer.addSource(MySource);
+
+	let [entry] = await importer.getEntries();
+	assert.equal(entry.dateUpdated.toISOString(), "2021-06-15T00:00:00.000Z");
+});
+
+test("Atom multiple authors and content without a type attribute", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	importer.addSource("atom", "https://example.com/feed.xml");
+	importer.addDataOverride("atom", "https://example.com/feed.xml", Fetcher.parseXml(`<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+	<entry>
+		<id>https://example.com/post/</id>
+		<title>Post</title>
+		<updated>2024-01-01T00:00:00Z</updated>
+		<author><name>Author One</name></author>
+		<author><name>Author Two</name></author>
+		<content>Plain content</content>
+	</entry>
+</feed>`));
+
+	let [entry] = await importer.getEntries();
+	assert.deepEqual(entry.authors, [{ name: "Author One" }, { name: "Author Two" }]);
+	assert.equal(entry.content, "Plain content");
+	assert.equal(entry.contentType, undefined);
+});
+
+test("RSS guid without attributes", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	importer.addSource("rss", "https://example.com/feed.xml");
+	importer.addDataOverride("rss", "https://example.com/feed.xml", Fetcher.parseXml(`<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+	<channel>
+		<title>Example</title>
+		<link>https://example.com/</link>
+		<item>
+			<title>With guid</title>
+			<link>https://example.com/one/</link>
+			<guid>https://example.com/one/</guid>
+			<pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+			<description>One</description>
+		</item>
+		<item>
+			<title>Without guid</title>
+			<link>https://example.com/two/</link>
+			<pubDate>Tue, 02 Jan 2024 00:00:00 GMT</pubDate>
+			<description>Two</description>
+		</item>
+	</channel>
+</rss>`));
+
+	let entries = await importer.getEntries();
+	assert.deepEqual(entries.map(entry => entry.uuid), [
+		"11ty/import::rss::https://example.com/two/",
+		"11ty/import::rss::https://example.com/one/",
+	]);
+});
+
+test("Documents that fail to process are counted as errors", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	class MySource extends DataSource {
+		static TYPE = "arbitrary";
+		static TYPE_FRIENDLY = "Arbitrary";
+
+		getData() {
+			return [{
+				url: "https://example.com/test/",
+				// missing content throws during Markdown conversion
+				contentType: "text",
+			}];
+		}
+	}
+
+	importer.addSource(MySource);
+
+	let entries = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(entries.length, 0);
+	assert.equal(importer.getCounts().errors, 1);
+});

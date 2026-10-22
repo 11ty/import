@@ -228,7 +228,7 @@ class DataSource {
 			}
 
 			if(entry.dateUpdated && !(entry.dateUpdated instanceof Date)) {
-				entry.dateUpdated = this.toDateObj(entry.date);
+				entry.dateUpdated = this.toDateObj(entry.dateUpdated);
 			}
 
 			Object.defineProperty(entry, "source", {
