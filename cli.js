@@ -78,11 +78,15 @@ let { positionals, values } = parseArgs({
 			type: "string",
 			default: "",
 		},
+		limit: {
+			type: "string",
+			default: "",
+		},
 	},
 });
 
 let [ type, target ] = positionals;
-let { quiet, dryrun, output, help, version, overwrite, cacheduration, format, persist, assetrefs, avatarrefs, within, preserve, posttypes } = values;
+let { quiet, dryrun, output, help, version, overwrite, cacheduration, format, persist, assetrefs, avatarrefs, within, preserve, posttypes, limit } = values;
 
 if(version) {
 	const require = createRequire(import.meta.url);
@@ -135,6 +139,9 @@ if(help) {
   npx @11ty/import wordpress [target] --posttypes=posts,pages,product
   npx @11ty/import wordpressxml [file] --posttypes=posts,pages,product
 
+  # Only the newest entries (stops fetching once reached)
+  npx @11ty/import [type] [target] --limit=5
+
   # Import webmention.io webmentions into post data files (requires WEBMENTION_IO_TOKEN)
   npx @11ty/import webmentions example.com
 `);
@@ -159,7 +166,7 @@ importer.setVerbose(!quiet);
 importer.setSafeMode(!overwrite);
 importer.setDryRun(dryrun);
 try {
-	importer.addSource(type, posttypes ? { url: target, postTypes: posttypes } : target);
+	importer.addSource(type, posttypes || limit ? { url: target, postTypes: posttypes || undefined, limit: limit || undefined } : target);
 } catch(e) {
 	console.error(e.message);
 	process.exit(1);

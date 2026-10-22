@@ -10,12 +10,15 @@ export class WaybackMachine extends DataSource {
 	static HOST = "https://web.archive.org";
 	static FIELDS = ["urlkey", "timestamp", "original"];
 	static PER_PAGE = 5000;
-	static MAX_RETRIES = 5;
-	static DEFAULT_RETRY_SECONDS = 60;
-	static RETRY_STATUSES = [429, 503];
+	static FIRST_YEAR = 1996;
+	static TIMEOUT = "60s";
+	static CONCURRENCY = 2;
 	static CONTENT_CLASSES = ["e-content", "entry-content", "post-content", "article-content", "post-body"];
 	static REMOVED_TAGS = ["script", "style", "noscript", "template", "nav", "header", "footer", "aside", "form"];
 	static ASSET_ATTRIBUTES = ["src", "poster", "srcset"];
+
+	// Original asset URL to the first archive URL used for it
+	#assetUrls = new Map();
 
 	constructor(target) {
 		super();
@@ -91,7 +94,7 @@ export class WaybackMachine extends DataSource {
 	}
 
 	getUniqueIdFromEntry(entry) {
-		return `${DataSource.UUID_PREFIX}::${WaybackMachine.TYPE}::${entry.key}`;
+		return `${DataSource.UUID_PREFIX}::${this.constructor.TYPE}::${entry.key}`;
 	}
 
 	getRawEntryDates(rawEntry) {
@@ -100,9 +103,9 @@ export class WaybackMachine extends DataSource {
 		};
 	}
 
-	#getCdxUrl(resumeKey) {
+	#getCdxUrl(resumeKey, range = {}) {
 		let params = new URLSearchParams({
-			url: `${this.url.host}${this.url.pathname}`,
+			url: `${this.url.host}${range.pathname || this.url.pathname}`,
 			matchType: "prefix",
 			output: "json",
 			fl: WaybackMachine.FIELDS.join(","),
@@ -112,8 +115,11 @@ export class WaybackMachine extends DataSource {
 			limit: WaybackMachine.PER_PAGE,
 		});
 		params.append("filter", "mimetype:text/html");
-		if(this.to) {
-			params.set("to", this.to);
+		if(range.from) {
+			params.set("from", range.from);
+		}
+		if(range.to || this.to) {
+			params.set("to", range.to || this.to);
 		}
 		if(resumeKey) {
 			params.set("resumeKey", resumeKey);
@@ -121,31 +127,51 @@ export class WaybackMachine extends DataSource {
 		return `${WaybackMachine.HOST}/cdx/search/cdx?${params}`;
 	}
 
-	// The Wayback Machine is rate limited and often temporarily unavailable, waits for `Retry-After`
-	async #withRetry(url, fetchFn) {
-		for(let attempt = 0; ; attempt++) {
-			try {
-				return await fetchFn();
-			} catch(e) {
-				let response = e?.cause;
-				if(!(response instanceof Response) || !WaybackMachine.RETRY_STATUSES.includes(response.status) || attempt >= WaybackMachine.MAX_RETRIES) {
-					throw e;
-				}
-
-				this.fetcher.clearError(url);
-				let seconds = Number(response.headers.get("retry-after")) || WaybackMachine.DEFAULT_RETRY_SECONDS;
-				await new Promise(resolve => setTimeout(resolve, seconds * 1000));
-			}
-		}
+	// Bursts of requests (e.g. archived assets) are rate limited
+	setFetcher(fetcher) {
+		super.setFetcher(fetcher);
+		fetcher.setOriginLimit(WaybackMachine.HOST, { concurrency: WaybackMachine.CONCURRENCY });
 	}
 
-	// One capture per page: the latest (for content) and the earliest (a fallback publish date)
+	// The Wayback Machine is often slow to respond
+	getFetchOptions() {
+		return {
+			timeout: WaybackMachine.TIMEOUT,
+		};
+	}
+
+	// CDX queries newest first when limited (results are in URL order, not date order), otherwise one query for everything
+	getCaptureRanges() {
+		if(!this.getLimit()) {
+			return [{}];
+		}
+
+		let ranges = [];
+		let lastYear = Number(this.to?.slice(0, 4)) || new Date().getUTCFullYear();
+		for(let year = lastYear; year >= WaybackMachine.FIRST_YEAR; year--) {
+			let from = String(year);
+			ranges.push({ from, to: this.to?.startsWith(from) ? this.to : from });
+		}
+		return ranges;
+	}
+
+	// One capture per page: the latest (for content) and the earliest (a fallback publish date), stops at a range with enough pages for the limit
 	async #getCaptures() {
 		let pages = new Map();
+		for(let range of this.getCaptureRanges()) {
+			await this.#addCaptures(pages, range);
+			if(this.getLimit() && pages.size >= this.getLimit()) {
+				break;
+			}
+		}
+		return Array.from(pages.values());
+	}
+
+	async #addCaptures(pages, range) {
 		let resumeKey;
 		do {
-			let url = this.#getCdxUrl(resumeKey);
-			let rows = await this.#withRetry(url, () => super.getData(url, "json")) || [];
+			let url = this.#getCdxUrl(resumeKey, range);
+			let rows = await super.getData(url, "json") || [];
 			resumeKey = WaybackMachine.getResumeKey(rows);
 
 			for(let row of rows) {
@@ -155,7 +181,7 @@ export class WaybackMachine extends DataSource {
 
 				let [urlkey, timestamp, original] = row;
 				let key = WaybackMachine.getPageKey(urlkey);
-				if(!key) {
+				if(!key || !this.isPage(urlkey)) {
 					continue;
 				}
 
@@ -173,8 +199,25 @@ export class WaybackMachine extends DataSource {
 				}
 			}
 		} while(resumeKey);
+	}
 
-		return Array.from(pages.values());
+	// Hooks for site-specific subclasses
+	isPage(urlkey) {
+		return true;
+	}
+
+	// Newest first, the earliest capture is close to the publish date
+	getRawEntrySortValue(page) {
+		return page.firstTimestamp;
+	}
+
+	getContentNode(tree) {
+		return WaybackMachine.getContentNode(tree);
+	}
+
+	// `{ title, date, authors, tags, comments }`, each optional
+	async getPageData(tree, options) {
+		return {};
 	}
 
 	async getData(url, ...args) {
@@ -308,16 +351,19 @@ export class WaybackMachine extends DataSource {
 		}
 	}
 
-	// Assets are only fetched from the archive, never the live site
+	// Assets are only fetched from the archive, never the live site, one archive URL per asset (any timestamp redirects to the nearest capture)
 	#resolveAssetUrl(url, baseUrl, timestamp) {
 		let resolved = this.#resolveUrl(url, baseUrl);
 		if(resolved) {
-			return WaybackMachine.getArchiveUrl(timestamp, resolved);
+			if(!this.#assetUrls.has(resolved)) {
+				this.#assetUrls.set(resolved, WaybackMachine.getArchiveUrl(timestamp, resolved));
+			}
+			return this.#assetUrls.get(resolved);
 		}
 	}
 
 	// Absolute URLs (lazy-loaded images too) so links to the site are root-relative
-	#resolveUrls(nodes, baseUrl, timestamp) {
+	resolveUrls(nodes, baseUrl, timestamp) {
 		for(let node of WaybackMachine.findAll(nodes, node => node.attrs)) {
 			let { attrs } = node;
 			if(node.tag === "img" && attrs["data-src"] && (!attrs.src || attrs.src.startsWith("data:"))) {
@@ -351,7 +397,7 @@ export class WaybackMachine extends DataSource {
 
 		let html;
 		try {
-			html = await this.#withRetry(archiveUrl, () => this.getData(archiveUrl, "text"));
+			html = await this.getData(archiveUrl, "text");
 		} catch(e) {
 			return;
 		}
@@ -362,13 +408,15 @@ export class WaybackMachine extends DataSource {
 		let linkedData = WaybackMachine.getLinkedData(tree);
 		let baseUrl = this.#resolveUrl(WaybackMachine.find(tree, node => node.tag === "base")?.attrs?.href || "", url) || url;
 
-		let contentNode = WaybackMachine.getContentNode(tree);
+		let pageData = await this.getPageData(tree, { baseUrl, timestamp });
+		let contentNode = this.getContentNode(tree);
 		let contentNodes = WaybackMachine.removeNodes(contentNode ? contentNode.content : tree);
-		this.#resolveUrls(contentNodes, baseUrl, timestamp);
+		this.resolveUrls(contentNodes, baseUrl, timestamp);
 
 		let heading = WaybackMachine.find(contentNodes, node => node.tag === "h1");
 		let headingText = heading ? WaybackMachine.getText(heading).trim() : undefined;
-		let title = meta["og:title"]?.[0]
+		let title = pageData.title
+			|| meta["og:title"]?.[0]
 			|| linkedData.headline
 			|| headingText
 			|| WaybackMachine.getText(WaybackMachine.find(tree, node => node.tag === "title")).trim();
@@ -383,6 +431,7 @@ export class WaybackMachine extends DataSource {
 			|| WaybackMachine.find(contentNodes, node => node.tag === "time" && node.attrs?.datetime);
 
 		let date = WaybackMachine.firstDate(
+			pageData.date,
 			meta["article:published_time"]?.[0],
 			linkedData.datePublished,
 			meta["datepublished"]?.[0],
@@ -392,7 +441,7 @@ export class WaybackMachine extends DataSource {
 		);
 		let dateUpdated = WaybackMachine.firstDate(meta["article:modified_time"]?.[0], linkedData.dateModified);
 
-		let authorNames = meta["author"] || [linkedData.author].flat().map(author => typeof author === "string" ? author : author?.name);
+		let authorNames = pageData.authors || meta["author"] || [linkedData.author].flat().map(author => typeof author === "string" ? author : author?.name);
 
 		let metadata = {
 			archiveUrl: WaybackMachine.getArchiveUrl(timestamp, original, ""),
@@ -406,7 +455,7 @@ export class WaybackMachine extends DataSource {
 
 		let cleanEntry = {
 			uuid: this.getUniqueIdFromEntry(rawEntry),
-			type: WaybackMachine.TYPE,
+			type: this.constructor.TYPE,
 			title,
 			url,
 			authors: authorNames.filter(Boolean).map(name => ({ name })),
@@ -422,9 +471,13 @@ export class WaybackMachine extends DataSource {
 			cleanEntry.description = description;
 		}
 
-		let tags = meta["article:tag"] || [];
+		let tags = pageData.tags || meta["article:tag"] || [];
 		if(tags.length) {
 			cleanEntry.tags = tags;
+		}
+
+		if(this.shouldIncludeComments() && pageData.comments?.length) {
+			cleanEntry.comments = pageData.comments;
 		}
 
 		return cleanEntry;

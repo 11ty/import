@@ -45,6 +45,9 @@ npx @11ty/import [type] [target] --overwrite-allow=drafts
 # Change local fetch cache duration (default: 24h)
 npx @11ty/import [type] [target] --cacheduration=20m
 
+# Only import the newest entries, fetching stops once reached
+npx @11ty/import [type] [target] --limit=5
+
 # Only import entries created (or updated) within a duration (default: *)
 # Same syntax as --cacheduration
 npx @11ty/import [type] [target] --within=7d
@@ -182,6 +185,7 @@ npx @11ty/import bluesky @11ty.dev
 - `linktree` (Linktree username or profile URL)
 - `medium` (extracted Medium export folder path)
 - `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
+- `typepad` (Typepad blog URL or domain, optionally with a path, from the Wayback Machine)
 - `twitter` (Twitter/X archive `.zip` file or extracted folder path)
 - `wayback` (site URL or domain, optionally with a path, from the Internet Archive’s Wayback Machine)
 - `webmentions` (domain or site URL, data files only, see [Webmentions](#webmentions))
@@ -219,6 +223,9 @@ npx @11ty/import wayback https://example.com/blog/
 
 # Only captures on or before a date (any timestamp prefix: 2022, 202211, 20221120), e.g. before the domain was parked
 npx @11ty/import wayback https://web.archive.org/web/2022/https://example.com/
+
+# Import posts and pages with comments from a Typepad blog (offline since September 30, 2025) via the Wayback Machine
+npx @11ty/import typepad sethgodin.typepad.com/seths_blog/
 ```
 
 ### Comments
@@ -242,6 +249,7 @@ Comments with content warnings or from authors that opted out of wider distribut
 - `youtubeuser`: requires a `YOUTUBE_API_KEY` environment variable ([YouTube Data API](https://developers.google.com/youtube/v3/getting-started))
 - `bluesky`: replies (private when labeled or the author discourages showing their account to logged-out users)
 - `fediverse`: public and unlisted replies known to the user’s server (private when unlisted, marked sensitive, or the author opted out of search engine indexing)
+- `typepad`: comments in the latest archived copy of each post
 - `twitter`: your own replies in a thread, as comments on its first tweet (with local media)
 - `rss`, `atom`: per-post comment feeds (`wfw:commentRss` or `<link rel="replies">`), when available
 
@@ -272,6 +280,8 @@ let importer = new Importer();
 
 importer.setOutputFolder("."); // --output
 importer.setCacheDuration("24h"); // --cacheduration
+importer.setFetchTimeout("30s"); // milliseconds or a duration, 0 to disable
+importer.setFetchRetries(2); // for timeouts, network errors, 408, 429, and 5xx responses, 0 to disable
 importer.setVerbose(true); // --quiet
 importer.setSafeMode(false); // --overwrite
 importer.setDryRun(false); // --dryrun

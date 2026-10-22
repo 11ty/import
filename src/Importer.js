@@ -30,6 +30,7 @@ import { Blogger } from "./DataSource/Blogger.js";
 import { DevTo } from "./DataSource/DevTo.js";
 import { MediumExport } from "./DataSource/MediumExport.js";
 import { WaybackMachine } from "./DataSource/WaybackMachine.js";
+import { Typepad } from "./DataSource/Typepad.js";
 import { Linktree } from "./DataSource/Linktree.js";
 import { Webmentions } from "./DataSource/Webmentions.js";
 
@@ -213,6 +214,18 @@ class Importer {
 		}
 	}
 
+	setFetchTimeout(timeout) {
+		if(timeout !== undefined && timeout !== "") {
+			this.fetcher.setFetchTimeout(timeout);
+		}
+	}
+
+	setFetchRetries(retries) {
+		if(retries !== undefined) {
+			this.fetcher.setFetchRetries(retries);
+		}
+	}
+
 	setPersistTarget(persistTarget) {
 		this.persistManager.setTarget(persistTarget);
 	}
@@ -258,6 +271,8 @@ class Importer {
 				cls = DevTo;
 			} else if(type === "medium") {
 				cls = MediumExport;
+			} else if(type === "typepad") {
+				cls = Typepad;
 			} else if(type === "wayback") {
 				cls = WaybackMachine;
 			} else if(type === "linktree") {
@@ -279,6 +294,7 @@ class Importer {
 		let postTypes;
 		let comments;
 		let content;
+		let limit;
 
 		if(typeof options === "string") {
 			identifier = options;
@@ -289,6 +305,7 @@ class Importer {
 			postTypes = options.postTypes;
 			comments = options.comments;
 			content = options.content;
+			limit = options.limit;
 		}
 
 		if(alias?.getTarget && identifier) {
@@ -321,6 +338,10 @@ class Importer {
 				throw new Error(`The postTypes option is not supported by the ${source.constructor.TYPE} source type.`);
 			}
 			source.setPostTypes(postTypes);
+		}
+
+		if(limit) {
+			source.setLimit(limit);
 		}
 
 		// Enabled by default for sources that support comments

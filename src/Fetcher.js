@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { createHash } from "node:crypto";
 import kleur from "kleur";
 import { XMLParser } from "fast-xml-parser";
+import PQueue from "p-queue";
 
 import EleventyFetch from "@11ty/eleventy-fetch";
 import { DirectoryManager } from "./DirectoryManager.js";
@@ -24,6 +25,10 @@ const xmlParser = new XMLParser({
 
 class Fetcher {
 	#cacheDuration = "0s";
+	#timeout = "30s";
+	#retries = 2;
+	#retryDelay = 1000;
+	#originQueues = new Map();
 	#directoryManager;
 	#assetsFolder = "assets";
 	#persistManager;
@@ -31,6 +36,7 @@ class Fetcher {
 	#downloadAssets = true;
 
 	static USER_AGENT = "Eleventy Import v1.0.0";
+	static RETRY_STATUSES = [408, 429, 500, 502, 503, 504];
 
 	static getContextPathname(url) {
 		if(url) {
@@ -74,6 +80,27 @@ class Fetcher {
 
 	static parseXml(content) {
 		return xmlParser.parse(content);
+	}
+
+	// Timeouts, network errors, rate limits, and server errors
+	static isRetryable(error) {
+		let cause = error?.cause;
+		if(cause instanceof Response) {
+			return Fetcher.RETRY_STATUSES.includes(cause.status);
+		}
+		return cause?.name === "TimeoutError" || cause instanceof TypeError;
+	}
+
+	// `Retry-After` (seconds or a date), otherwise exponential backoff with jitter
+	static getRetryDelay(error, attempt, baseDelay) {
+		let retryAfter = error?.cause?.headers?.get?.("retry-after");
+		if(retryAfter) {
+			let seconds = Number(retryAfter) || (Date.parse(retryAfter) - Date.now()) / 1000;
+			if(seconds > 0) {
+				return seconds * 1000;
+			}
+		}
+		return baseDelay * 2 ** attempt + Math.random() * baseDelay / 4;
 	}
 
 	constructor() {
@@ -126,6 +153,31 @@ class Fetcher {
 
 	setCacheDuration(duration) {
 		this.#cacheDuration = duration;
+	}
+
+	// Milliseconds or a duration string (e.g. `30s`), `0` disables it
+	setFetchTimeout(timeout) {
+		this.#timeout = timeout;
+	}
+
+	// Retries after the first attempt, `0` disables them
+	setFetchRetries(retries) {
+		this.#retries = retries;
+	}
+
+	// Per-origin p-queue options (e.g. `{ concurrency: 2 }`), unlimited by default (Eleventy Fetch caps all requests at 10)
+	setOriginLimit(origin, options) {
+		this.#originQueues.set(new URL(origin).origin, new PQueue(options));
+	}
+
+	#queue(url, fn) {
+		let queue = this.#originQueues.get(new URL(url).origin);
+		return queue ? queue.add(fn) : fn();
+	}
+
+	// Milliseconds before the first retry, doubled for each one after
+	setFetchRetryDelay(delay) {
+		this.#retryDelay = delay;
 	}
 
 	setDirectoryManager(manager) {
@@ -249,12 +301,14 @@ class Fetcher {
 			showErrors: true, // whether to show if a request has an error.
 		}, verbosity);
 
+		let { retries = this.#retries, retryDelay = this.#retryDelay, ...fetchOpts } = options;
 		let opts = Object.assign({
 			duration: this.#cacheDuration,
+			timeout: this.#timeout,
 			type: "text",
 			verbose: false, // don’t use Fetch logging—we’re handling it ourself
 			fetchOptions: {},
-		}, options);
+		}, fetchOpts);
 
 		if(!opts.fetchOptions.headers) {
 			opts.fetchOptions.headers = {};
@@ -277,23 +331,35 @@ class Fetcher {
 
 		this.fetchedUrls.add(url);
 
-		return EleventyFetch(url, opts).then(result => {
-			if(opts.type === "xml") {
-				return Fetcher.parseXml(result);
-			}
-
-			return result;
-		}, error => {
-			if(!this.errors.has(url)) {
-				this.errors.add(url);
-
-				if(this.isVerbose && showErrors) {
-					Logger.log(kleur.red(`Error fetching`), logUrl, kleur.red(error.message.split(url).join(logUrl)));
+		let isGet = !opts.fetchOptions.method || opts.fetchOptions.method.toUpperCase() === "GET";
+		for(let attempt = 0; ; attempt++) {
+			try {
+				// Retry delays happen outside of the queue
+				let result = await this.#queue(url, () => EleventyFetch(url, opts));
+				return opts.type === "xml" ? Fetcher.parseXml(result) : result;
+			} catch(error) {
+				if(!isGet || attempt >= retries || !Fetcher.isRetryable(error)) {
+					this.#logError(url, logUrl, error, showErrors);
+					throw error;
 				}
-			}
 
-			return Promise.reject(error);
-		});
+				let delay = Fetcher.getRetryDelay(error, attempt, retryDelay);
+				if(this.isVerbose && verbose) {
+					Logger.log(kleur.gray(`Retrying in ${Math.ceil(delay / 1000)}s`), logUrl, kleur.gray(error.message.split(url).join(logUrl)));
+				}
+				await new Promise(resolve => setTimeout(resolve, delay));
+			}
+		}
+	}
+
+	#logError(url, logUrl, error, showErrors) {
+		if(!this.errors.has(url)) {
+			this.errors.add(url);
+
+			if(this.isVerbose && showErrors) {
+				Logger.log(kleur.red(`Error fetching`), logUrl, kleur.red(error.message.split(url).join(logUrl)));
+			}
+		}
 	}
 }
 

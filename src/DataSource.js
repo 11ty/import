@@ -22,6 +22,8 @@ class DataSource {
 	#includeContent = true;
 	#fetchDataOverrides = {};
 	#outputFolder = ".";
+	#limit;
+	#limitCount = 0;
 
 	constructor() {
 		this.isVerbose = true;
@@ -239,6 +241,30 @@ class DataSource {
 		return entities.decodeHTML(striptags(html)).replace(/\s+/g, " ").trim() || undefined;
 	}
 
+	// Overrides the fetcher’s `timeout`, `retries`, and `retryDelay`
+	getFetchOptions() {
+		return {};
+	}
+
+	// Only the newest entries, fetching stops once reached
+	setLimit(limit) {
+		this.#limit = Number(limit) || undefined;
+	}
+
+	getLimit() {
+		return this.#limit;
+	}
+
+	isLimitReached() {
+		return this.#limit !== undefined && this.#limitCount >= this.#limit;
+	}
+
+	// Raw entries are cleaned newest first when limited (paged APIs are assumed to be newest first)
+	getRawEntrySortValue(rawEntry) {
+		let { created, updated } = this.getRawEntryDates?.(rawEntry) || {};
+		return (created || updated)?.getTime() || 0;
+	}
+
 	async getData(url, type, showErrors = true) {
 		if(!this.isValidHttpUrl(url)) {
 			throw new Error("Invalid url: " + url);
@@ -260,6 +286,7 @@ class DataSource {
 
 		return this.fetcher.fetch(url, {
 			type,
+			...this.getFetchOptions(),
 			fetchOptions: {
 				headers: this.getHeaders(url),
 			},
@@ -277,15 +304,24 @@ class DataSource {
 			dataEntries = this.getEntriesFromData(data) || [];
 		}
 
+		if(this.#limit) {
+			dataEntries = [...dataEntries].sort((a, b) => {
+				let [x, y] = [this.getRawEntrySortValue(a), this.getRawEntrySortValue(b)];
+				return x < y ? 1 : x > y ? -1 : 0;
+			});
+		}
+
 		let entries = [];
 		for(let rawEntry of dataEntries) {
+			if(this.isLimitReached()) {
+				break;
+			}
 			if(this.isWithin(rawEntry)) {
-				if(typeof this.cleanEntry === "function") {
-					let cleaned = await this.cleanEntry(rawEntry, data);
-					entries.push(cleaned);
-				} else {
-					entries.push(rawEntry);
+				let cleaned = typeof this.cleanEntry === "function" ? await this.cleanEntry(rawEntry, data) : rawEntry;
+				if(cleaned) {
+					this.#limitCount++;
 				}
+				entries.push(cleaned);
 			}
 		}
 
@@ -310,7 +346,7 @@ class DataSource {
 				let pagedUrl;
 
 				try {
-					while(pagedUrl = url(pageNumber)) {
+					while(!this.isLimitReached() && (pagedUrl = url(pageNumber))) {
 						let found = 0;
 						let data = await this.getData(pagedUrl, this.getType(), false);
 						let cleanedData = await this.getCleanedEntries(data);
@@ -368,6 +404,10 @@ class DataSource {
 			seen.add(key);
 			return true;
 		});
+
+		if(this.#limit) {
+			entries = entries.slice(0, this.#limit);
+		}
 
 		return entries.map(entry => {
 			if(this.label) {

@@ -2449,6 +2449,127 @@ test("Wayback Machine", async (t) => {
 	assert.equal(cleanContent(second.content), "<p>Text</p>");
 });
 
+test("Typepad (Wayback Machine)", async (t) => {
+	let importer = getImporter();
+	importer.addSource("typepad", "example.typepad.com/blog/");
+
+	let cdxUrl = `https://web.archive.org/cdx/search/cdx?url=example.typepad.com%2Fblog%2F&matchType=prefix&output=json&fl=urlkey%2Ctimestamp%2Coriginal&filter=statuscode%3A200&collapse=digest&showResumeKey=true&limit=5000&filter=mimetype%3Atext%2Fhtml`;
+	importer.addDataOverride("typepad", cdxUrl, [
+		["urlkey", "timestamp", "original"],
+		["com,typepad,example)/blog", "20100101000000", "http://example.typepad.com/blog/"],
+		["com,typepad,example)/blog/news", "20100101000000", "http://example.typepad.com/blog/news/"],
+		["com,typepad,example)/blog/2008/03", "20100101000000", "http://example.typepad.com/blog/2008/03/"],
+		["com,typepad,example)/blog/2008/03/index.html", "20100101000000", "http://example.typepad.com/blog/2008/03/index.html"],
+		["com,typepad,example)/blog/2008/03/hello.html", "20100101000000", "http://example.typepad.com/blog/2008/03/hello.html"],
+	]);
+
+	importer.addDataOverride("typepad", "https://web.archive.org/web/20100101000000id_/http://example.typepad.com/blog/2008/03/hello.html", `<!doctype html>
+<html><head><title>Example Blog: Hello Typepad</title></head><body>
+	<div id="beta"><h2 class="date-header">March 04, 2008</h2>
+	<div class="entry-category-news entry-type-post entry" id="entry-6a00d8">
+		<h3 class="entry-header">Hello Typepad</h3>
+		<div class="entry-content">
+			<div class="entry-body"><p>First <a href="http://example.typepad.com/blog/2008/02/older.html">older</a>.</p></div>
+			<div class="entry-more" id="more"><p><img src="http://example.typepad.com/.a/6a00d8-pi"></p></div>
+		</div>
+		<div class="entry-footer">
+			<p class="entry-footer-info"><span class="post-footers">Posted by Zach at 01:02 PM in <a href="http://example.typepad.com/blog/news/">News</a></span> <span class="separator">|</span> <a class="permalink" href="http://example.typepad.com/blog/2008/03/hello.html">Permalink</a></p>
+		</div>
+		<div class="entry-footer"><span class="tags">Tags: <a rel="tag" href="http://example.typepad.com/blog/tags/web">web</a></span></div>
+	</div>
+	<div class="comments" id="comments"><div class="comments-content">
+		<div class="comment font-entrybody" id="comment-6a00d9">
+			<div class="comment-content font-entrybody"><p>Nice <strong>post</strong>!</p></div>
+			<p class="comment-footer font-entryfooter">Posted by: <a rel="nofollow" href="https://jane.example/">Jane</a> | <a href="http://example.typepad.com/blog/2008/03/hello.html#comment-6a00d9">March 05, 2008 at 09:00 AM</a></p>
+		</div>
+		<div class="comment font-entrybody" id="comment-6a00da">
+			<div class="comment-content font-entrybody"><p>First!</p></div>
+			<p class="comment-footer font-entryfooter">Posted by: Anonymous | March 04, 2008 at 02:00 PM</p>
+		</div>
+	</div></div>
+	</div>
+</body></html>`);
+
+	let [post, ...rest] = await importer.getEntries({ contentType: "html" });
+	assert.equal(rest.length, 0);
+	assert.equal(post.uuid, "11ty/import::typepad::com,typepad,example)/blog/2008/03/hello");
+	assert.equal(post.type, "typepad");
+	assert.equal(post.title, "Hello Typepad");
+	assert.deepEqual(post.date, new Date("2008-03-04T13:02:00Z"));
+	assert.deepEqual(post.authors, [{ name: "Zach" }]);
+	assert.deepEqual(post.tags, ["News", "web"]);
+	assert.equal(cleanContent(post.content), `<p>First <a href="/blog/2008/02/older.html">older</a>.</p>
+<p><img src="https://web.archive.org/web/20100101000000id_/http://example.typepad.com/.a/6a00d8-pi"></p>`);
+
+	assert.deepEqual(post.comments.map(comment => [comment.id, comment.author, comment.date.toISOString(), comment.content]), [
+		["6a00da", { name: "Anonymous" }, "2008-03-04T14:00:00.000Z", "<p>First!</p>"],
+		["6a00d9", { name: "Jane", url: "https://jane.example/" }, "2008-03-05T09:00:00.000Z", "<p>Nice <strong>post</strong>!</p>"],
+	]);
+	assert.equal(post.comments[1].url, "http://example.typepad.com/blog/2008/03/hello.html#comment-6a00d9");
+});
+
+test("Typepad limit", async (t) => {
+	let importer = getImporter();
+	importer.addSource("typepad", { url: "example.typepad.com/blog/", limit: 2, comments: false });
+
+	// One CDX query per year, newest first, stopping at the first year with enough posts
+	let cdxUrl = year => `https://web.archive.org/cdx/search/cdx?url=example.typepad.com%2Fblog%2F${year}%2F&matchType=prefix&output=json&fl=urlkey%2Ctimestamp%2Coriginal&filter=statuscode%3A200&collapse=digest&showResumeKey=true&limit=5000&filter=mimetype%3Atext%2Fhtml`;
+	for(let year = 2025; year > 2008; year--) {
+		importer.addDataOverride("typepad", cdxUrl(year), [["urlkey", "timestamp", "original"]]);
+	}
+	importer.addDataOverride("typepad", cdxUrl(2008), [
+		["urlkey", "timestamp", "original"],
+		["com,typepad,example)/blog/2008/01/old.html", "20200101000000", "http://example.typepad.com/blog/2008/01/old.html"],
+		["com,typepad,example)/blog/2008/03/b.html", "20080302000000", "http://example.typepad.com/blog/2008/03/b.html"],
+		["com,typepad,example)/blog/2008/03/a.html", "20080301000000", "http://example.typepad.com/blog/2008/03/a.html"],
+		// Month archive with several posts
+		["com,typepad,example)/blog/2008/03/index.html", "20080401000000", "http://example.typepad.com/blog/2008/03/index.html"],
+	]);
+	for(let slug of ["a", "b"]) {
+		// Footer date and author, the date header is commented out (e.g. Seth’s Blog)
+		importer.addDataOverride("typepad", `https://web.archive.org/web/2008030${slug === "a" ? 1 : 2}000000id_/http://example.typepad.com/blog/2008/03/${slug}.html`, `<html><head><meta property="og:image" content="http://example.com/og.jpg"></head><body><!--MTDateHeader><h2 class="date-header">March 01, 2008</h2></MTDateHeader--><h3 class="entry-header">${slug}</h3><div class="entry-body"><p>${slug}</p></div><div class="entry-footer"><p class="entry-footer-info">Posted by <a href="http://profile.typepad.com/zach">Zach</a> on March 0${slug === "a" ? 1 : 2}, 2008 <span class="separator">|</span></p></div></body></html>`);
+	}
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.deepEqual(entries.map(entry => [entry.title, entry.date.toISOString(), entry.authors]), [
+		["b", "2008-03-02T00:00:00.000Z", [{ name: "Zach" }]],
+		["a", "2008-03-01T00:00:00.000Z", [{ name: "Zach" }]],
+	]);
+	// Shared assets use one archive URL
+	assert.deepEqual(new Set(entries.map(entry => entry.metadata.media.featuredImage)), new Set(["https://web.archive.org/web/20080302000000id_/http://example.com/og.jpg"]));
+});
+
+test("Limit stops paging and cleaning", async (t) => {
+	let requests = [];
+	class Paged extends DataSource {
+		static TYPE = "paged";
+		getType() {
+			return "json";
+		}
+		getUrl() {
+			return pageNumber => pageNumber <= 3 ? `https://example.com/page/${pageNumber}` : false;
+		}
+		getRawEntryDates(rawEntry) {
+			return { created: new Date(rawEntry.date) };
+		}
+		cleanEntry(rawEntry) {
+			requests.push(rawEntry.id);
+			return { uuid: rawEntry.id, type: "paged", title: rawEntry.id, url: `https://example.com/${rawEntry.id}`, date: new Date(rawEntry.date), content: "", contentType: "html" };
+		}
+	}
+
+	let importer = getImporter();
+	importer.addSource(Paged, { url: "https://example.com/", limit: 3 });
+	// Out of order within a page, newest are cleaned first
+	importer.addDataOverride("paged", "https://example.com/page/1", [{ id: "b", date: "2024-01-02" }, { id: "a", date: "2024-01-03" }]);
+	importer.addDataOverride("paged", "https://example.com/page/2", [{ id: "d", date: "2023-12-01" }, { id: "c", date: "2023-12-02" }]);
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.deepEqual(entries.map(entry => entry.title), ["a", "b", "c"]);
+	// `d` is never cleaned and page 3 is never requested (it has no override)
+	assert.deepEqual(requests, ["a", "b", "c"]);
+});
+
 test("Linktree", async (t) => {
 	let importer = getImporter();
 	importer.addSource("linktree", "@example");
@@ -2758,4 +2879,75 @@ test("Comment request failures only affect their own entries", async (t) => {
 	await source.getOptionalData("https://example.com/two.json", "json", [two]);
 	assert.equal(DataSource.hasIncompleteComments(one), true);
 	assert.equal(DataSource.hasIncompleteComments(two), false);
+});
+
+test("Fetch timeout", async (t) => {
+	let { createServer } = await import("node:http");
+	let server = createServer((req, res) => {
+		setTimeout(() => res.end("ok"), 500);
+	});
+	await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => server.close());
+
+	let fetcher = new Fetcher();
+	fetcher.setVerbose(false);
+	fetcher.setFetchTimeout(50);
+	fetcher.setFetchRetries(0);
+
+	let url = `http://127.0.0.1:${server.address().port}/slow`;
+	await assert.rejects(fetcher.fetch(url, {}, { showErrors: false }));
+});
+
+test("Fetch retries", async (t) => {
+	let { createServer } = await import("node:http");
+	let requests = {};
+	let server = createServer((req, res) => {
+		requests[req.url] = (requests[req.url] || 0) + 1;
+		if(req.url === "/flaky" && requests[req.url] < 3) {
+			res.statusCode = 503;
+			return res.end();
+		}
+		res.statusCode = req.url === "/missing" ? 404 : 200;
+		res.end("ok");
+	});
+	await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => server.close());
+
+	let fetcher = new Fetcher();
+	fetcher.setVerbose(false);
+	fetcher.setFetchRetryDelay(1);
+
+	let origin = `http://127.0.0.1:${server.address().port}`;
+	assert.equal(await fetcher.fetch(`${origin}/flaky`), "ok");
+	assert.equal(requests["/flaky"], 3);
+	assert.equal(fetcher.errors.size, 0);
+
+	// Not retried
+	await assert.rejects(fetcher.fetch(`${origin}/missing`, {}, { showErrors: false }));
+	assert.equal(requests["/missing"], 1);
+	assert.equal(fetcher.errors.size, 1);
+});
+
+test("Fetch origin limit", async (t) => {
+	let { createServer } = await import("node:http");
+	let active = 0;
+	let maxActive = 0;
+	let server = createServer((req, res) => {
+		active++;
+		maxActive = Math.max(maxActive, active);
+		setTimeout(() => {
+			active--;
+			res.end("ok");
+		}, 20);
+	});
+	await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => server.close());
+
+	let origin = `http://127.0.0.1:${server.address().port}`;
+	let fetcher = new Fetcher();
+	fetcher.setVerbose(false);
+	fetcher.setOriginLimit(origin, { concurrency: 2 });
+
+	await Promise.all([1, 2, 3, 4, 5, 6].map(id => fetcher.fetch(`${origin}/${id}`)));
+	assert.equal(maxActive, 2);
 });
