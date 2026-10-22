@@ -232,7 +232,7 @@ class MarkdownToHtml {
 	}
 
 	getTurndownService(options = {}) {
-		let { filePath, type } = options;
+		let { filePath, type, unusedAssets = [] } = options;
 		let isFromWordPress = type === WordPressApi.TYPE;
 
 		let ts = new TurndownService({
@@ -400,9 +400,7 @@ class MarkdownToHtml {
 					let srcset = node.getAttribute("srcset");
 					if(node.parentNode.localName === "picture" && srcset) {
 						let urls = MarkdownToHtml.getImageSrcUrls(srcset);
-						for(let asset of urls) {
-							this.assetsToDelete.add(this.recontextifyRelativeAssetPath(asset, filePath));
-						}
+						unusedAssets.push(...urls);
 					}
 					return content;
 				} catch(e) {
@@ -422,9 +420,7 @@ class MarkdownToHtml {
 
 					this.assetsToKeep.add(this.recontextifyRelativeAssetPath(src, filePath));
 
-					for(let asset of remainingUrls) {
-						this.assetsToDelete.add(this.recontextifyRelativeAssetPath(asset, filePath));
-					}
+					unusedAssets.push(...remainingUrls);
 
 					// New lines are stripped by markdown-it anyway when encoding back to HTML
 					let altString = (node.getAttribute("alt") || "").replace(/\n+/gi, " ");
@@ -466,12 +462,23 @@ class MarkdownToHtml {
 	}
 
 	async toMarkdown(html, entry) {
+		let unusedAssets = [];
 		let ts = this.getTurndownService({
 			type: entry.type,
 			filePath: entry.filePath,
+			unusedAssets,
 		});
 
-		return ts.turndown(html);
+		let markdown = ts.turndown(html);
+
+		// Keep assets still referenced elsewhere (e.g. a link to a full-size image)
+		for(let asset of unusedAssets) {
+			if(!markdown.includes(asset)) {
+				this.assetsToDelete.add(this.recontextifyRelativeAssetPath(asset, entry.filePath));
+			}
+		}
+
+		return markdown;
 	}
 }
 

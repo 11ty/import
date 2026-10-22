@@ -10,6 +10,7 @@ A small utility (and CLI) to import content files from various content sources. 
 	- Make anything on the web into a CMS for your web site using [Indieweb PESOS](https://indieweb.org/PESOS).
 - **Clean**: Converts imported content to markdown files in your repository (`--format=html` to use raw HTML).
 - **Standalone**: downloads all referenced assets (images, videos, stylesheets, scripts, etc) in content and co-locates assets with the content.
+	- WordPress: also downloads linked uploads (e.g. PDFs) and makes links to the site root-relative.
 - **Resumable**: Can stop and resume a large import later, reusing a local cache (with configurable cache duration)
 - **Repeatable**: avoids overwriting existing content files (unless you opt-in with `--overwrite`).
 	- This allows you to continue using an import source for new content while editing the already imported content.

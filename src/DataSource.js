@@ -270,6 +270,14 @@ class DataSource {
 		});
 	}
 
+	// Site root for whole-site imports, enables rewriting links to the site as root-relative
+	getSiteUrl() {}
+
+	// Linked files (not just embedded assets) to download, receives a URL object
+	isLinkedAsset(url) {
+		return false;
+	}
+
 	// Override to ignore paging errors that just mean there are no more pages
 	async isErrorWorthWorryingAbout(e) {
 		return true;

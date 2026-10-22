@@ -319,11 +319,8 @@ class Importer {
 				transformedHtml = entities.decodeHTML(content);
 			}
 
-			if(!this.shouldDownloadAssets()) {
-				content = transformedHtml;
-			} else {
-				content = await this.htmlTransformer.transform(transformedHtml, entry);
-			}
+			// Also rewrites links when assets aren’t downloaded
+			content = await this.htmlTransformer.transform(transformedHtml, entry);
 		}
 
 		if(isWritingToMarkdown) {

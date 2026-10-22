@@ -7,6 +7,9 @@ import { Importer } from "../src/Importer.js";
 import { DataSource } from "../src/DataSource.js";
 import { Persist } from "../src/Persist.js";
 import { Fetcher } from "../src/Fetcher.js";
+import { HtmlTransformer } from "../src/HtmlTransformer.js";
+import { MarkdownToHtml } from "../src/MarkdownToHtml.js";
+import { WordPressApi } from "../src/DataSource/WordPressApi.js";
 
 function cleanContent(content) {
 	// trim extra whitespace (dirty workaround for trailing whitespace)
@@ -467,6 +470,81 @@ test("Author avatars are downloaded as assets", async (t) => {
 	]);
 	// shared author objects aren’t mutated
 	assert.equal(author.avatarUrl, "https://example.com/avatar.png");
+});
+
+function getLinkTransformer() {
+	let transformer = new HtmlTransformer();
+	let fetched = [];
+	transformer.setFetcher({
+		async fetchAsset(url) {
+			fetched.push(url);
+			return `assets/${new URL(url).pathname.split("/").pop()}`;
+		},
+	});
+	return { transformer, fetched };
+}
+
+test("WordPress links to the site are root-relative and uploads are downloaded", async (t) => {
+	let { transformer, fetched } = getLinkTransformer();
+	let entry = {
+		url: "https://example.com/blog/2025/06/hello/",
+		source: new WordPressApi("https://example.com/blog/"),
+	};
+
+	let html = await transformer.transform([
+		`<a href="https://example.com/blog/2020/01/post/#comments">Internal</a>`,
+		`<a href="http://www.example.com/blog/about/">www and http</a>`,
+		`<a href="https://example.com/blog/?p=123">Query string</a>`,
+		`<a href="https://example.com/shop/">Outside the site</a>`,
+		`<a href="https://other.com/blog/">External</a>`,
+		`<a href="#top">Fragment</a>`,
+		`<a href="mailto:hi@example.com">Email</a>`,
+		`<a href="https://example.com/blog/wp-content/uploads/2020/01/doc.pdf">Upload</a>`,
+		`<a href="/blog/wp-content/uploads/2020/01/full.jpg"><img src="https://cdn.example.com/small.jpg?w=300&amp;ssl=1"></a>`,
+	].join("\n"), entry);
+
+	assert.equal(html, [
+		`<a href="/blog/2020/01/post/#comments">Internal</a>`,
+		`<a href="/blog/about/">www and http</a>`,
+		`<a href="https://example.com/blog/?p=123">Query string</a>`,
+		`<a href="https://example.com/shop/">Outside the site</a>`,
+		`<a href="https://other.com/blog/">External</a>`,
+		`<a href="#top">Fragment</a>`,
+		`<a href="mailto:hi@example.com">Email</a>`,
+		`<a href="assets/doc.pdf">Upload</a>`,
+		`<a href="assets/full.jpg"><img src="assets/small.jpg"></a>`,
+	].join("\n"));
+
+	assert.deepEqual(fetched, [
+		"https://example.com/blog/wp-content/uploads/2020/01/doc.pdf",
+		"https://example.com/blog/wp-content/uploads/2020/01/full.jpg",
+		// HTML entities are decoded
+		"https://cdn.example.com/small.jpg?w=300&ssl=1",
+	]);
+});
+
+test("Links are unchanged for sources that aren’t whole sites", async (t) => {
+	let { transformer, fetched } = getLinkTransformer();
+	let entry = {
+		url: "https://example.com/post/",
+		source: new DataSource(),
+	};
+
+	let input = `<a href="https://example.com/about/">Internal</a><a href="https://example.com/wp-content/uploads/doc.pdf">Upload</a>`;
+	assert.equal(await transformer.transform(input, entry), input);
+	assert.deepEqual(fetched, []);
+});
+
+test("Markdown cleanup keeps srcset assets that are linked", async (t) => {
+	let md = new MarkdownToHtml();
+	md.setVerbose(false);
+
+	let markdown = await md.toMarkdown(`<a href="assets/big.jpg"><img src="assets/small.jpg" srcset="assets/big.jpg 1024w, assets/small.jpg 300w, assets/medium.jpg 600w"></a>`, {
+		filePath: "post/index.md",
+	});
+
+	assert.equal(markdown, "[![](assets/medium.jpg)](assets/big.jpg)");
+	assert.deepEqual(Array.from(md.assetsToDelete), ["post/assets/small.jpg"]);
 });
 
 test("postTypes is not supported by other source types", async (t) => {

@@ -171,6 +171,14 @@ export class WordPressApi extends DataSource {
 		return "json";
 	}
 
+	getSiteUrl() {
+		return this.url;
+	}
+
+	isLinkedAsset(url) {
+		return url.pathname.includes("/wp-content/uploads/") || url.hostname.endsWith(".files.wordpress.com");
+	}
+
 	#getSubtypeUrl(subtype, suffix = "", query = "") {
 		return WordPressApi.#getRouteUrl(this.#apiRoot, `${subtype}/${suffix}`, query);
 	}
