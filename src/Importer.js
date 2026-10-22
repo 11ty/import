@@ -242,11 +242,10 @@ class Importer {
 
 		// Enabled by default for sources that support comments
 		if(comments !== undefined) {
-			if(typeof source.setComments === "function") {
-				source.setComments(comments);
-			} else if(comments) {
+			if(comments && !source.constructor.SUPPORTS_COMMENTS) {
 				throw new Error(`The comments option is not supported by the ${source.constructor.TYPE} source type.`);
 			}
+			source.setComments(comments);
 		}
 
 		this.sources.push(source);
@@ -331,6 +330,27 @@ class Importer {
 
 			return transformed;
 		}));
+	}
+
+	async addComments(entries) {
+		let entriesBySource = new Map();
+		for(let entry of entries) {
+			let source = entry.source;
+			if(typeof source?.addComments === "function" && source.shouldIncludeComments()) {
+				if(!entriesBySource.has(source)) {
+					entriesBySource.set(source, []);
+				}
+				entriesBySource.get(source).push(entry);
+			}
+		}
+
+		await Promise.all(Array.from(entriesBySource).map(([source, sourceEntries]) => source.addComments(sourceEntries)));
+
+		for(let entry of entries) {
+			if(Array.isArray(entry.comments) && entry.comments.length === 0) {
+				delete entry.comments;
+			}
+		}
 	}
 
 	async getTransformedContent(entry, isWritingToMarkdown) {
@@ -422,6 +442,9 @@ class Importer {
 		if(maxLimit) {
 			entries = entries.slice(0, maxLimit);
 		}
+
+		// After skipped entries are removed to avoid extra requests
+		await this.addComments(entries);
 
 		let promises = await Promise.allSettled(entries.map(async entry => {
 			await this.fetchRelatedMedia(entry);

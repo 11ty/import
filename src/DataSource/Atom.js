@@ -1,9 +1,15 @@
+import * as entities from "entities";
+
 import { DataSource } from "../DataSource.js";
 import { MediaRss } from "../MediaRss.js";
 
 export class Atom extends DataSource {
 	static TYPE = "atom";
 	static TYPE_FRIENDLY = "Atom";
+	static SUPPORTS_COMMENTS = true;
+
+	// Per-entry comment feeds (RFC 4685 `<link rel="replies">`)
+	#commentFeeds = new Map();
 
 	constructor(url) {
 		super();
@@ -53,6 +59,15 @@ export class Atom extends DataSource {
 		};
 	}
 
+	// Parsed as a plain value (not an object) when <content> has no attributes
+	static getContent(rawEntry) {
+		let content = rawEntry.content;
+		if(typeof content === "object" && content !== null) {
+			return { content: content["#text"], contentType: content["@_type"] };
+		}
+		return { content };
+	}
+
 	cleanEntry(rawEntry, data) {
 		let authors = [];
 		if(Array.isArray(rawEntry?.author)) {
@@ -65,13 +80,7 @@ export class Atom extends DataSource {
 
 		let { created, updated } = this.getRawEntryDates(rawEntry);
 
-		// Parsed as a plain value (not an object) when <content> has no attributes
-		let content = rawEntry.content;
-		let hasAttributes = typeof content === "object" && content !== null;
-		let contentType = hasAttributes ? content["@_type"] : undefined;
-		if(hasAttributes) {
-			content = content["#text"];
-		}
+		let { content, contentType } = Atom.getContent(rawEntry);
 
 		// Media markup only makes sense in HTML content
 		if(contentType === "html") {
@@ -84,9 +93,15 @@ export class Atom extends DataSource {
 
 		let featuredImage = MediaRss.getFeaturedImageUrl(rawEntry);
 
+		let uuid = this.getUniqueIdFromEntry(rawEntry);
+		let replies = MediaRss.toArray(rawEntry.link).find(link => link["@_rel"] === "replies" && (!link["@_type"] || link["@_type"] === "application/atom+xml"));
+		if(replies?.["@_href"] && this.isValidHttpUrl(replies["@_href"])) {
+			this.#commentFeeds.set(uuid, { url: replies["@_href"], id: rawEntry.id });
+		}
+
 		return {
 			...(featuredImage ? { metadata: { media: { featuredImage } } } : {}),
-			uuid: this.getUniqueIdFromEntry(rawEntry),
+			uuid,
 			type: Atom.TYPE,
 			title: rawEntry.title,
 			url: this.getUrlFromEntry(rawEntry),
@@ -96,5 +111,31 @@ export class Atom extends DataSource {
 			content,
 			contentType,
 		}
+	}
+
+	async addComments(entries) {
+		await Promise.all(entries.map(async entry => {
+			let feed = this.#commentFeeds.get(entry.uuid);
+			if(!feed) {
+				return;
+			}
+
+			let data = await this.getOptionalData(feed.url);
+			entry.comments = DataSource.sortComments(MediaRss.toArray(data?.feed?.entry).map(rawComment => {
+				let { content, contentType } = Atom.getContent(rawComment);
+				let alternate = MediaRss.toArray(rawComment.link).find(link => !link["@_rel"] || link["@_rel"] === "alternate");
+				let parentId = rawComment["thr:in-reply-to"]?.["@_ref"];
+				let author = MediaRss.toArray(rawComment.author)[0];
+
+				return DataSource.cleanComment({
+					id: rawComment.id,
+					parentId: parentId === feed.id ? 0 : parentId,
+					url: alternate?.["@_href"],
+					author: typeof author === "string" ? { name: author } : { name: author?.name, url: author?.uri },
+					date: this.toDateObj(rawComment.published || rawComment.updated),
+					content: contentType === "html" || contentType === "xhtml" ? entities.decodeHTML(content || "") : DataSource.textToHtml(entities.decodeHTML(content || "")),
+				});
+			}));
+		}));
 	}
 }

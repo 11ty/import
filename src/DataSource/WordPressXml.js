@@ -14,9 +14,9 @@ export class WordPressXml extends DataSource {
 	static STATUSES = ["publish", "draft"];
 	static EMPTY_DATE = "0000-00-00 00:00:00";
 	static IGNORED_COMMENT_TYPES = ["pingback", "trackback"];
+	static SUPPORTS_COMMENTS = true;
 
 	#postTypes = WordPressXml.DEFAULT_POST_TYPES;
-	#includeComments = true;
 	#siteUrl;
 	#authors = new Map();
 	#attachments = new Map();
@@ -39,10 +39,6 @@ export class WordPressXml extends DataSource {
 
 	getPostTypes() {
 		return this.#postTypes;
-	}
-
-	setComments(includeComments) {
-		this.#includeComments = Boolean(includeComments);
 	}
 
 	// Local file path or URL
@@ -157,21 +153,16 @@ export class WordPressXml extends DataSource {
 		return MediaRss.toArray(rawEntry["wp:comment"]).filter(comment => {
 			return String(comment["wp:comment_approved"]) === "1" && !WordPressXml.IGNORED_COMMENT_TYPES.includes(comment["wp:comment_type"]);
 		}).map(comment => {
-			let author = {
-				name: entities.decodeHTML(WordPressXml.toString(comment["wp:comment_author"])),
-			};
-			let url = WordPressXml.toString(comment["wp:comment_author_url"]);
-			if(url) {
-				author.url = url;
-			}
-
-			return {
+			return DataSource.cleanComment({
 				id: comment["wp:comment_id"],
-				parentId: comment["wp:comment_parent"] || 0,
-				author,
+				parentId: comment["wp:comment_parent"],
+				author: {
+					name: entities.decodeHTML(WordPressXml.toString(comment["wp:comment_author"])),
+					url: WordPressXml.toString(comment["wp:comment_author_url"]),
+				},
 				date: WordPressXml.toDate(comment["wp:comment_date_gmt"], comment["wp:comment_date"]),
 				content: WordPressXml.cleanContent(comment["wp:comment_content"]),
-			};
+			});
 		}).sort((a, b) => a.date - b.date);
 	}
 
@@ -240,7 +231,7 @@ export class WordPressXml extends DataSource {
 			cleanEntry.tags = metadata.categories;
 		}
 
-		if(this.#includeComments) {
+		if(this.shouldIncludeComments()) {
 			let comments = WordPressXml.getComments(rawEntry);
 			if(comments.length) {
 				cleanEntry.comments = comments;

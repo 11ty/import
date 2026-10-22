@@ -1,9 +1,15 @@
+import * as entities from "entities";
+
 import { DataSource } from "../DataSource.js";
 import { MediaRss } from "../MediaRss.js";
 
 export class Rss extends DataSource {
 	static TYPE = "rss";
 	static TYPE_FRIENDLY = "RSS";
+	static SUPPORTS_COMMENTS = true;
+
+	// Per-entry comment feeds (e.g. WordPress `wfw:commentRss`)
+	#commentFeeds = new Map();
 
 	constructor(url) {
 		super();
@@ -71,9 +77,15 @@ export class Rss extends DataSource {
 
 		let featuredImage = MediaRss.getFeaturedImageUrl(rawEntry);
 
+		let uuid = this.getUniqueIdFromEntry(rawEntry);
+		let commentFeed = rawEntry["wfw:commentRss"];
+		if(commentFeed && this.isValidHttpUrl(commentFeed)) {
+			this.#commentFeeds.set(uuid, commentFeed);
+		}
+
 		return {
 			...(featuredImage ? { metadata: { media: { featuredImage } } } : {}),
-			uuid: this.getUniqueIdFromEntry(rawEntry),
+			uuid,
 			type: Rss.TYPE,
 			title: rawEntry.title || this.toReadableDate(rawEntry.pubDate),
 			url: rawEntry.link,
@@ -83,5 +95,25 @@ export class Rss extends DataSource {
 			content,
 			// contentType: "", // unknown
 		}
+	}
+
+	async addComments(entries) {
+		await Promise.all(entries.map(async entry => {
+			let url = this.#commentFeeds.get(entry.uuid);
+			if(!url) {
+				return;
+			}
+
+			let data = await this.getOptionalData(url);
+			entry.comments = DataSource.sortComments(MediaRss.toArray(data?.rss?.channel?.item).map(item => {
+				return DataSource.cleanComment({
+					id: item.guid?.["#text"] ?? item.guid ?? item.link,
+					url: item.link,
+					author: { name: item["dc:creator"] },
+					date: this.toDateObj(item.pubDate),
+					content: entities.decodeHTML(item["content:encoded"] || item.description || ""),
+				});
+			}));
+		}));
 	}
 }

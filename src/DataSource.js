@@ -7,8 +7,11 @@ import { Logger } from "./Logger.js";
 
 class DataSource {
 	static UUID_PREFIX = "11ty/import";
+	// Sources set `entry.comments` in `cleanEntry` or fetch them in `addComments(entries)`
+	static SUPPORTS_COMMENTS = false;
 
 	#fetcher;
+	#includeComments = true;
 	#fetchDataOverrides = {};
 	#outputFolder = ".";
 
@@ -39,6 +42,62 @@ class DataSource {
 	// For testing
 	setDataOverride(url, data) {
 		this.#fetchDataOverrides[url] = data;
+	}
+
+	setComments(includeComments) {
+		this.#includeComments = Boolean(includeComments);
+	}
+
+	shouldIncludeComments() {
+		return this.constructor.SUPPORTS_COMMENTS && this.#includeComments;
+	}
+
+	// Comments are optional, so failed requests are logged and skipped
+	async getOptionalData(url, type = this.getType?.()) {
+		try {
+			return await this.getData(url, type, false);
+		} catch(e) {
+			if(this.isVerbose && await this.isErrorWorthWorryingAbout(e)) {
+				Logger.error(`Error fetching comments from ${url}: ${e.message}`);
+			}
+			this.#fetcher?.clearError(url);
+		}
+	}
+
+	// Shared comment shape: `parentId` is 0 for top-level comments and `content` is HTML
+	// Private comments (the author opted out of wider distribution) are links only
+	static cleanComment({ id, parentId, url, author = {}, date, content, summary, isPrivate = false }) {
+		let comment = {
+			id,
+			parentId: parentId || 0,
+		};
+		if(url) {
+			comment.url = url;
+		}
+
+		if(isPrivate) {
+			comment.private = true;
+			comment.date = date;
+			return comment;
+		}
+
+		comment.author = Object.fromEntries(Object.entries(author).filter(([key, value]) => value));
+		comment.date = date;
+		// Content warning
+		if(summary) {
+			comment.summary = summary;
+		}
+		comment.content = content || "";
+		return comment;
+	}
+
+	static sortComments(comments) {
+		return comments.sort((a, b) => a.date - b.date);
+	}
+
+	// HTML from plain text comments
+	static textToHtml(text) {
+		return DataSource.nl2br(entities.escapeUTF8(text || ""));
 	}
 
 	setLabel(label) {
@@ -93,7 +152,8 @@ class DataSource {
 		return new Intl.DateTimeFormat(locale, options).format(date)
 	}
 
-	getHeaders() {
+	// Receives the request URL
+	getHeaders(url) {
 		return {};
 	}
 
@@ -140,7 +200,7 @@ class DataSource {
 		return this.fetcher.fetch(url, {
 			type,
 			fetchOptions: {
-				headers: this.getHeaders(),
+				headers: this.getHeaders(url),
 			},
 		}, {
 			verbose: true,

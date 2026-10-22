@@ -1,4 +1,5 @@
 import path from "node:path";
+import { DataSource } from "../DataSource.js";
 import { Rss } from "./Rss.js";
 
 export class FediverseUser extends Rss {
@@ -48,5 +49,40 @@ export class FediverseUser extends Rss {
 		obj.contentType = "html";
 
 		return obj;
+	}
+
+	// Unlisted replies and authors that opted out of search engines are links only
+	static isPrivate(status) {
+		return status.visibility === "unlisted" || Boolean(status.account?.noindex);
+	}
+
+	static cleanComment(status, rootId) {
+		return DataSource.cleanComment({
+			id: status.id,
+			parentId: status.in_reply_to_id === rootId ? 0 : status.in_reply_to_id,
+			url: status.url,
+			author: {
+				name: status.account?.display_name || status.account?.acct,
+				url: status.account?.url,
+				avatarUrl: status.account?.avatar,
+			},
+			date: new Date(Date.parse(status.created_at)),
+			content: status.content,
+			summary: status.spoiler_text,
+			isPrivate: FediverseUser.isPrivate(status),
+		});
+	}
+
+	// Only includes replies known to the user’s server
+	async addComments(entries) {
+		await Promise.all(entries.map(async entry => {
+			let { postId } = FediverseUser.parseFromUrl(entry.url);
+			if(!postId) {
+				return;
+			}
+
+			let data = await this.getOptionalData(`https://${this.hostname}/api/v1/statuses/${postId}/context`, "json");
+			entry.comments = DataSource.sortComments((data?.descendants || []).map(status => FediverseUser.cleanComment(status, postId)));
+		}));
 	}
 }

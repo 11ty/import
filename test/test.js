@@ -1286,12 +1286,16 @@ test("WordPress API comments are requested in bulk", async (t) => {
 test("comments is not supported by other source types", async (t) => {
 	let importer = new Importer();
 
+	class MySource extends DataSource {
+		static TYPE = "arbitrary";
+	}
+
 	assert.throws(() => {
-		importer.addSource("rss", { url: "https://example.com/feed.xml", comments: true });
+		importer.addSource(MySource, { id: "test", comments: true });
 	});
 
 	// Disabling is a no-op
-	importer.addSource("rss", { url: "https://example.com/feed.xml", comments: false });
+	importer.addSource(MySource, { id: "test", comments: false });
 });
 
 test("Absolute output folders are kept", async (t) => {
@@ -1315,4 +1319,306 @@ test("Absolute output folders are kept", async (t) => {
 
 	let entries = await importer.getEntries();
 	assert.deepEqual(entries.map(entry => entry.filePath).sort(), ["/var/output/drafts/posts/draft.html", "/var/output/posts/test.html"]);
+});
+
+function getCommentsImporter(type, options) {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+	importer.addSource(type, options);
+	return importer;
+}
+
+test("RSS comment feeds (wfw:commentRss)", async (t) => {
+	let feed = `<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:wfw="http://wellformedweb.org/CommentAPI/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+	<channel>
+		<title>Example</title>
+		<link>https://example.com/</link>
+		<item>
+			<title>One</title>
+			<link>https://example.com/one/</link>
+			<guid>https://example.com/?p=1</guid>
+			<pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+			<description>One</description>
+			<wfw:commentRss>https://example.com/one/feed/</wfw:commentRss>
+		</item>
+	</channel>
+</rss>`;
+
+	let importer = getCommentsImporter("rss", "https://example.com/feed.xml");
+	importer.addDataOverride("rss", "https://example.com/feed.xml", Fetcher.parseXml(feed));
+	importer.addDataOverride("rss", "https://example.com/one/feed/", Fetcher.parseXml(`<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+	<channel>
+		<item>
+			<title>By: Jane</title>
+			<link>https://example.com/one/#comment-6</link>
+			<dc:creator><![CDATA[Jane]]></dc:creator>
+			<pubDate>Wed, 03 Jan 2024 00:00:00 GMT</pubDate>
+			<guid isPermaLink="false">https://example.com/?p=1#comment-6</guid>
+			<content:encoded><![CDATA[<p>Second</p>]]></content:encoded>
+		</item>
+		<item>
+			<title>By: Zach</title>
+			<link>https://example.com/one/#comment-5</link>
+			<dc:creator><![CDATA[Zach]]></dc:creator>
+			<pubDate>Tue, 02 Jan 2024 00:00:00 GMT</pubDate>
+			<guid isPermaLink="false">https://example.com/?p=1#comment-5</guid>
+			<description><![CDATA[First]]></description>
+		</item>
+	</channel>
+</rss>`));
+
+	let [entry] = await importer.getEntries();
+	assert.deepEqual(entry.comments, [{
+		id: "https://example.com/?p=1#comment-5",
+		parentId: 0,
+		url: "https://example.com/one/#comment-5",
+		author: { name: "Zach" },
+		date: new Date("2024-01-02T00:00:00.000Z"),
+		content: "First",
+	}, {
+		id: "https://example.com/?p=1#comment-6",
+		parentId: 0,
+		url: "https://example.com/one/#comment-6",
+		author: { name: "Jane" },
+		date: new Date("2024-01-03T00:00:00.000Z"),
+		content: "<p>Second</p>",
+	}]);
+
+	// Disabled: the comment feed isn’t requested
+	let disabled = getCommentsImporter("rss", { url: "https://example.com/feed.xml", comments: false });
+	disabled.addDataOverride("rss", "https://example.com/feed.xml", Fetcher.parseXml(feed));
+	let [disabledEntry] = await disabled.getEntries();
+	assert.equal(disabledEntry.comments, undefined);
+});
+
+test("Atom comment feeds (RFC 4685 replies)", async (t) => {
+	let importer = getCommentsImporter("atom", "https://example.com/feed.xml");
+	importer.addDataOverride("atom", "https://example.com/feed.xml", Fetcher.parseXml(`<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+	<title>Example</title>
+	<entry>
+		<id>https://example.com/one/</id>
+		<title>One</title>
+		<published>2024-01-01T00:00:00Z</published>
+		<content type="html">One</content>
+		<link rel="replies" type="application/atom+xml" href="https://example.com/one/comments.xml"/>
+	</entry>
+</feed>`));
+	importer.addDataOverride("atom", "https://example.com/one/comments.xml", Fetcher.parseXml(`<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:thr="http://purl.org/syndication/thread/1.0">
+	<entry>
+		<id>tag:example.com,2024:2</id>
+		<author><name>Zach</name></author>
+		<published>2024-01-03T00:00:00Z</published>
+		<content>Thanks &amp; more
+on a new line</content>
+		<thr:in-reply-to ref="tag:example.com,2024:1"/>
+	</entry>
+	<entry>
+		<id>tag:example.com,2024:1</id>
+		<author><name>Jane</name><uri>https://jane.example/</uri></author>
+		<published>2024-01-02T00:00:00Z</published>
+		<link rel="alternate" href="https://example.com/one/#c1"/>
+		<content type="html">&lt;p&gt;Great&lt;/p&gt;</content>
+		<thr:in-reply-to ref="https://example.com/one/"/>
+	</entry>
+</feed>`));
+
+	let [entry] = await importer.getEntries();
+	assert.deepEqual(entry.comments, [{
+		id: "tag:example.com,2024:1",
+		parentId: 0,
+		url: "https://example.com/one/#c1",
+		author: { name: "Jane", url: "https://jane.example/" },
+		date: new Date("2024-01-02T00:00:00.000Z"),
+		content: "<p>Great</p>",
+	}, {
+		id: "tag:example.com,2024:2",
+		parentId: "tag:example.com,2024:1",
+		author: { name: "Zach" },
+		date: new Date("2024-01-03T00:00:00.000Z"),
+		content: "Thanks &amp; more<br>\non a new line",
+	}]);
+});
+
+test("Bluesky replies", async (t) => {
+	let importer = getCommentsImporter("bluesky", "zachleat.com");
+	importer.addDataOverride("bluesky", "https://bsky.app/profile/zachleat.com/rss", Fetcher.parseXml(fs.readFileSync("./test/sources/bluesky-test.xml", "utf8")));
+
+	let root = "at://did:plc:xpchjovbk6sxl3bv74z7cs54/app.bsky.feed.post/3lckusgtkuk2r";
+	let reply = {
+		uri: "at://did:plc:jane/app.bsky.feed.post/aaa",
+		author: { handle: "jane.example", displayName: "Jane", avatar: "https://cdn.bsky.app/avatar.jpg" },
+		record: { text: "<b>Nice</b>\nlist", createdAt: "2024-12-05T15:00:00.000Z", reply: { parent: { uri: root } } },
+	};
+	let nested = {
+		uri: "at://did:plc:xpchjovbk6sxl3bv74z7cs54/app.bsky.feed.post/bbb",
+		author: { handle: "zachleat.com" },
+		record: { text: "Thanks", createdAt: "2024-12-05T16:00:00.000Z", reply: { parent: { uri: reply.uri } } },
+	};
+
+	let hidden = {
+		uri: "at://did:plc:hidden/app.bsky.feed.post/ddd",
+		author: { handle: "hidden.example", displayName: "Hidden", labels: [{ val: "!no-unauthenticated" }] },
+		record: { text: "Logged-in only", createdAt: "2024-12-05T17:00:00.000Z", reply: { parent: { uri: root } } },
+	};
+
+	importer.addDataOverride("bluesky", `https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(root)}&depth=100&parentHeight=0`, {
+		thread: {
+			post: { uri: root },
+			replies: [
+				{ post: reply, replies: [{ post: nested, replies: [] }] },
+				{ post: hidden, replies: [] },
+				// Blocked
+				{ $type: "app.bsky.feed.defs#blockedPost", uri: "at://did:plc:blocked/app.bsky.feed.post/ccc" },
+			],
+		},
+	});
+
+	let [entry] = await importer.getEntries();
+	assert.deepEqual(entry.comments, [{
+		id: reply.uri,
+		parentId: 0,
+		url: "https://bsky.app/profile/jane.example/post/aaa",
+		author: { name: "Jane", url: "https://bsky.app/profile/jane.example", avatarUrl: "https://cdn.bsky.app/avatar.jpg" },
+		date: new Date("2024-12-05T15:00:00.000Z"),
+		content: "&lt;b&gt;Nice&lt;/b&gt;<br>\nlist",
+	}, {
+		id: nested.uri,
+		parentId: reply.uri,
+		url: "https://bsky.app/profile/zachleat.com/post/bbb",
+		author: { name: "zachleat.com", url: "https://bsky.app/profile/zachleat.com" },
+		date: new Date("2024-12-05T16:00:00.000Z"),
+		content: "Thanks",
+	}, {
+		// Links only
+		id: hidden.uri,
+		parentId: 0,
+		url: "https://bsky.app/profile/hidden.example/post/ddd",
+		private: true,
+		date: new Date("2024-12-05T17:00:00.000Z"),
+	}]);
+});
+
+test("Fediverse replies", async (t) => {
+	let importer = getCommentsImporter("fediverse", "@eleventy@fosstodon.org");
+	importer.addDataOverride("fediverse", "https://fosstodon.org/users/eleventy.rss", Fetcher.parseXml(`<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+	<channel>
+		<title>Eleventy</title>
+		<link>https://fosstodon.org/@eleventy</link>
+		<item>
+			<guid isPermaLink="true">https://fosstodon.org/@eleventy/111</guid>
+			<link>https://fosstodon.org/@eleventy/111</link>
+			<pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate>
+			<description>&lt;p&gt;Hello&lt;/p&gt;</description>
+		</item>
+	</channel>
+</rss>`));
+	importer.addDataOverride("fediverse", "https://fosstodon.org/api/v1/statuses/111/context", {
+		ancestors: [],
+		descendants: [{
+			id: "222",
+			in_reply_to_id: "111",
+			url: "https://mastodon.social/@jane/222",
+			created_at: "2024-01-02T00:00:00.000Z",
+			content: "<p>Hi!</p>",
+			account: { display_name: "", acct: "jane@mastodon.social", url: "https://mastodon.social/@jane", avatar: "https://mastodon.social/avatar.png" },
+		}, {
+			id: "333",
+			in_reply_to_id: "222",
+			url: "https://fosstodon.org/@eleventy/333",
+			created_at: "2024-01-03T00:00:00.000Z",
+			content: "<p>Hey</p>",
+			spoiler_text: "Spoilers",
+			sensitive: true,
+			account: { display_name: "Eleventy", acct: "eleventy", url: "https://fosstodon.org/@eleventy" },
+		}, {
+			id: "444",
+			in_reply_to_id: "111",
+			visibility: "unlisted",
+			url: "https://mastodon.social/@quiet/444",
+			created_at: "2024-01-04T00:00:00.000Z",
+			content: "<p>Unlisted</p>",
+			account: { display_name: "Quiet", acct: "quiet@mastodon.social" },
+		}, {
+			id: "555",
+			in_reply_to_id: "111",
+			visibility: "public",
+			url: "https://mastodon.social/@noindex/555",
+			created_at: "2024-01-05T00:00:00.000Z",
+			content: "<p>No index</p>",
+			account: { display_name: "No Index", acct: "noindex@mastodon.social", noindex: true },
+		}],
+	});
+
+	let [entry] = await importer.getEntries();
+	let [first, second, unlisted, noindex] = entry.comments;
+	assert.deepEqual([first.id, first.parentId, first.author.name], ["222", 0, "jane@mastodon.social"]);
+	assert.equal(first.content, "<p>Hi!</p>");
+	assert.equal(first.summary, undefined);
+	assert.equal(first.author.avatarUrl, "https://mastodon.social/avatar.png");
+
+	// Content warning
+	assert.deepEqual([second.id, second.parentId, second.summary, second.content], ["333", "222", "Spoilers", "<p>Hey</p>"]);
+
+	// Links only
+	assert.deepEqual(unlisted, { id: "444", parentId: 0, url: "https://mastodon.social/@quiet/444", private: true, date: new Date("2024-01-04T00:00:00.000Z") });
+	assert.deepEqual(noindex, { id: "555", parentId: 0, url: "https://mastodon.social/@noindex/555", private: true, date: new Date("2024-01-05T00:00:00.000Z") });
+});
+
+test("YouTube comments require an API key", async (t) => {
+	let feedUrl = "https://www.youtube.com/feeds/videos.xml?channel_id=UCskGTioqrMBcw8pd14_334A";
+	let feed = Fetcher.parseXml(fs.readFileSync("./test/sources/youtube-user.xml", "utf8"));
+
+	withEnv(t, { YOUTUBE_API_KEY: undefined });
+	let withoutKey = getCommentsImporter("youtubeUser", "UCskGTioqrMBcw8pd14_334A");
+	withoutKey.addDataOverride("youtube", feedUrl, feed);
+	assert.ok((await withoutKey.getEntries()).every(entry => !entry.comments));
+
+	process.env.YOUTUBE_API_KEY = "test-key";
+	let importer = getCommentsImporter("youtubeUser", "UCskGTioqrMBcw8pd14_334A");
+	importer.addDataOverride("youtube", feedUrl, feed);
+
+	let [source] = importer.getSources();
+	assert.deepEqual(source.getHeaders("https://www.googleapis.com/youtube/v3/commentThreads"), { "X-Goog-Api-Key": "test-key" });
+	assert.deepEqual(source.getHeaders(feedUrl), {});
+
+	let comment = (id, text, publishedAt, parentId) => ({
+		id,
+		snippet: { authorDisplayName: "Jane", authorChannelUrl: "http://www.youtube.com/@jane", authorProfileImageUrl: "https://yt3.ggpht.com/jane", textDisplay: text, publishedAt, parentId },
+	});
+
+	importer.addDataOverride("youtube", "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet%2Creplies&videoId=kNI_LcbvtNk&maxResults=100&textFormat=html", {
+		items: [{
+			snippet: { topLevelComment: comment("c1", "Great talk", "2024-12-01T00:00:00Z"), totalReplyCount: 2 },
+			replies: { comments: [comment("c1.r1", "Agreed", "2024-12-02T00:00:00Z", "c1")] },
+		}],
+		nextPageToken: "page2",
+	});
+	importer.addDataOverride("youtube", "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet%2Creplies&videoId=kNI_LcbvtNk&maxResults=100&textFormat=html&pageToken=page2", {
+		items: [{ snippet: { topLevelComment: comment("c2", "Second page", "2024-12-04T00:00:00Z"), totalReplyCount: 0 } }],
+	});
+	// Thread is missing a reply, so all replies are requested
+	importer.addDataOverride("youtube", "https://www.googleapis.com/youtube/v3/comments?part=snippet&parentId=c1&maxResults=100&textFormat=html", {
+		items: [comment("c1.r1", "Agreed", "2024-12-02T00:00:00Z", "c1"), comment("c1.r2", "Same", "2024-12-03T00:00:00Z", "c1")],
+	});
+
+	// Other videos have no overrides (failed requests are skipped)
+	let entries = await importer.getEntries();
+	let video = entries.find(entry => entry.url.endsWith("kNI_LcbvtNk"));
+	assert.deepEqual(video.comments.map(({ id, parentId }) => [id, parentId]), [["c1", 0], ["c1.r1", "c1"], ["c1.r2", "c1"], ["c2", 0]]);
+	assert.deepEqual(video.comments[0], {
+		id: "c1",
+		parentId: 0,
+		url: "https://www.youtube.com/watch?v=kNI_LcbvtNk&lc=c1",
+		author: { name: "Jane", url: "http://www.youtube.com/@jane", avatarUrl: "https://yt3.ggpht.com/jane" },
+		date: new Date("2024-12-01T00:00:00.000Z"),
+		content: "Great talk",
+	});
+	assert.equal(entries.filter(entry => entry.comments).length, 1);
 });

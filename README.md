@@ -106,8 +106,6 @@ npx @11ty/import wordpress https://en.blog.wordpress.com
 npx @11ty/import wordpressxml ./example.WordPress.2024-01-01.xml --posttypes=posts,pages,product
 ```
 
-Each post with approved comments gets a [template data file](https://www.11ty.dev/docs/data-template-dir/) next to it (e.g. `my-post.md` and `my-post.json`) with a `comments` array (`id`, `parentId`, `author`, `date`, `content`). Commenter emails and IP addresses are not imported. Skip comments with `importer.addSource("wordpress", { url, comments: false })`.
-
 #### Atom Feeds
 
 ```sh
@@ -139,6 +137,20 @@ npx @11ty/import fediverse eleventy@fosstodon.org
 npx @11ty/import bluesky @11ty.dev
 ```
 
+### Comments
+
+Comments are imported by default to a [template data file](https://www.11ty.dev/docs/data-template-dir/) next to each post (e.g. `my-post.md` and `my-post.json`) with a `comments` array. Each comment has `id`, `parentId` (`0` for top-level), `url`, `author` (`name`, `url`, `avatarUrl`), `date`, HTML `content`, and an optional `summary` (content warning).
+
+Comments from authors that opted out of wider distribution have `private: true` and only `id`, `parentId`, `url`, and `date` (link to them instead).
+
+- `wordpress`, `wordpressxml`: approved comments (no commenter emails or IP addresses)
+- `youtubeuser`: requires a `YOUTUBE_API_KEY` environment variable ([YouTube Data API](https://developers.google.com/youtube/v3/getting-started))
+- `bluesky`: replies (private when the author discourages showing their account to logged-out users)
+- `fediverse`: public and unlisted replies known to the user’s server (private when unlisted or the author opted out of search engine indexing)
+- `rss`, `atom`: per-post comment feeds (`wfw:commentRss` or `<link rel="replies">`), when available
+
+Skip comments with `importer.addSource(type, { url, comments: false })`.
+
 ### Programmatic API
 
 Don’t forget to install this into your project: `npm install @11ty/import`
@@ -159,7 +171,7 @@ importer.setAssetReferenceType("relative"); // --assetrefs
 
 // Sources (one or more)
 importer.addSource("bluesky", "@11ty.dev");
-// WordPress comments are imported by default
+// Comments are imported by default
 importer.addSource("wordpress", { url: "https://blog.fontawesome.com", comments: false });
 
 // Simple CSS selector (class names only) for preserved elements in Markdown conversion
