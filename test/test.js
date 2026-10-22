@@ -306,6 +306,65 @@ test("Markdown cleanup code blocks with nested <code>", async (t) => {
 	assert.equal(content2.trim(), "```\nAuthorization: Bearer DEAD-BEEF\n```");
 });
 
+const INSTAGRAM_EMBED = `<blockquote class="instagram-media" data-instgrm-permalink="https://www.instagram.com/p/BqXyz/"><div><a href="https://www.instagram.com/p/BqXyz/">View this post on Instagram</a></div></blockquote>`;
+
+test("Instagram embeds are kept as HTML with a single script, issue #20", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	let content = await importer.getTransformedContent({
+		content: `<p>Before</p>\n${INSTAGRAM_EMBED}\n<script async src="//www.instagram.com/embed.js"></script>\n<p>Middle</p>\n${INSTAGRAM_EMBED}\n<script async src="//www.instagram.com/embed.js"></script>\n<p>After</p>`,
+		contentType: "html"
+	}, true);
+
+	assert.equal(content.trim(), `Before\n\n${INSTAGRAM_EMBED}\n<script async src="https://www.instagram.com/embed.js"></script>\n\nMiddle\n\n${INSTAGRAM_EMBED}\n\nAfter`);
+});
+
+test("Embeds can be added and removed", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.removeEmbed("instagram");
+	importer.addEmbed("my-embed", { selector: ".my-embed", script: "https://example.com/embed.js" });
+	importer.addEmbed("no-script-embed", { selector: ".no-script-embed" });
+
+	assert.throws(() => importer.addEmbed("bad", { selector: "blockquote" }));
+	assert.throws(() => importer.addEmbed("", { selector: ".bad" }));
+
+	let content = await importer.getTransformedContent({
+		content: `${INSTAGRAM_EMBED}<div class="my-embed"><p>Hi</p></div><div class="no-script-embed"><p>Hello</p></div>`,
+		contentType: "html"
+	}, true);
+
+	assert.equal(content.trim(), `> [View this post on Instagram](https://www.instagram.com/p/BqXyz/)\n\n<div class="my-embed"><p>Hi</p></div>\n<script async src="https://example.com/embed.js"></script>\n\n<div class="no-script-embed"><p>Hello</p></div>`);
+});
+
+test("Embeds can be converted to links", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.addEmbed("instagram", { output: "link" });
+	importer.addEmbed("twitter", { output: "link" });
+	importer.addEmbed("tiktok", { output: "link" });
+
+	assert.throws(() => importer.addEmbed("bluesky", { output: "iframe" }));
+
+	let content = await importer.getTransformedContent({
+		content: `${INSTAGRAM_EMBED}
+<script async src="//www.instagram.com/embed.js"></script>
+<blockquote class="twitter-tweet"><p>Hello</p>&mdash; Eleventy (@eleven_ty) <a href="https://twitter.com/eleven_ty/status/123">January 1, 2024</a></blockquote>
+<blockquote class="tiktok-embed" cite="https://www.tiktok.com/@user/video/456"><section><a href="https://www.tiktok.com/@user">@user</a></section></blockquote>
+<blockquote class="bluesky-embed"><p>Bluesky</p></blockquote>`,
+		contentType: "html"
+	}, true);
+
+	assert.equal(content.trim(), `<https://www.instagram.com/p/BqXyz/>\n\n<https://twitter.com/eleven_ty/status/123>\n\n<https://www.tiktok.com/@user/video/456>\n\n<blockquote class="bluesky-embed"><p>Bluesky</p></blockquote>\n<script async src="https://embed.bsky.app/static/embed.js"></script>`);
+});
+
 test("within yes", async (t) => {
 	let importer = new Importer();
 

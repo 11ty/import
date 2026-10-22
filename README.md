@@ -146,6 +146,13 @@ importer.addSource("bluesky", "@11ty.dev");
 // Simple CSS selector (class names only) for preserved elements in Markdown conversion
 importer.addPreserved(".save-this-class-name");
 
+// Third-party embeds kept as HTML in Markdown conversion (class name and optional script URL)
+// Built-in: instagram, twitter, tiktok, bluesky
+importer.addEmbed("my-embed", { selector: ".my-embed", script: "https://example.com/embed.js" });
+importer.removeEmbed("twitter");
+// Convert embeds to a permalink instead (options merge into existing embeds)
+importer.addEmbed("instagram", { output: "link" });
+
 // Allow draft entries to overwrite (independent of Safe Mode value)
 importer.setOverwriteAllow("drafts");
 

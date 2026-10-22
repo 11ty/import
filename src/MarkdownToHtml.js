@@ -45,6 +45,14 @@ const TAGS_TO_KEEP = [
 	"wbr",
 ];
 
+// Third-party embeds kept as HTML
+const DEFAULT_EMBEDS = {
+	instagram: { selector: ".instagram-media", script: "https://www.instagram.com/embed.js" },
+	twitter: { selector: ".twitter-tweet", script: "https://platform.twitter.com/widgets.js" },
+	tiktok: { selector: ".tiktok-embed", script: "https://www.tiktok.com/embed.js" },
+	bluesky: { selector: ".bluesky-embed", script: "https://embed.bsky.app/static/embed.js" },
+};
+
 class MarkdownToHtml {
 	#prettierLanguages;
 	#initStarted;
@@ -53,6 +61,7 @@ class MarkdownToHtml {
 		this.assetsToKeep = new Set();
 		this.assetsToDelete = new Set();
 		this.preservedSelectors = new Set();
+		this.embeds = new Map(Object.entries(DEFAULT_EMBEDS));
 		this.isVerbose = true;
 		this.counts = {
 			cleaned: 0
@@ -64,6 +73,36 @@ class MarkdownToHtml {
 			throw new Error("Invalid preserved selector. Only class names are supported.");
 		}
 		this.preservedSelectors.add(selector);
+	}
+
+	// Options are merged into an existing embed with the same name
+	addEmbed(name, options = {}) {
+		if(!name) {
+			throw new Error("Missing embed name.");
+		}
+		let embed = Object.assign({ output: "html" }, this.embeds.get(name), options);
+		if(!embed.selector?.startsWith(".")) {
+			throw new Error("Invalid embed selector. Only class names are supported.");
+		}
+		if(embed.output !== "html" && embed.output !== "link") {
+			throw new Error(`Invalid embed output "${embed.output}". Use "html" or "link".`);
+		}
+		this.embeds.set(name, embed);
+	}
+
+	// Permalink from `cite` (TikTok), `data-instgrm-permalink` (Instagram), or the last link (X/Twitter, Bluesky)
+	static getEmbedUrl(node) {
+		let url = node.getAttribute("cite") || node.getAttribute("data-instgrm-permalink");
+		if(url) {
+			return url;
+		}
+
+		let links = Array.from(node.getElementsByTagName("a")).filter(a => a.getAttribute("href")?.startsWith("http"));
+		return links.at(-1)?.getAttribute("href");
+	}
+
+	removeEmbed(name) {
+		this.embeds.delete(name);
 	}
 
 	async asyncInit() {
@@ -252,6 +291,35 @@ class MarkdownToHtml {
 				},
 				replacement: (content, node) => {
 					return node.outerHTML;
+				}
+			});
+		}
+
+		// Original embed <script> elements are dropped as blank nodes, so each script is re-added once after its first embed
+		// https://github.com/11ty/import/issues/20
+		if(this.embeds.size > 0) {
+			let embeds = Array.from(this.embeds.values());
+			let scriptsAdded = new Set();
+			ts.addRule("keep-embeds", {
+				filter: function(node) {
+					return embeds.find(({ selector }) => MarkdownToHtml.hasClass(node, selector));
+				},
+				replacement: (content, node) => {
+					let { script, output } = embeds.find(({ selector }) => MarkdownToHtml.hasClass(node, selector));
+					if(output === "link") {
+						let url = MarkdownToHtml.getEmbedUrl(node);
+						if(url) {
+							return `\n\n<${url}>\n\n`;
+						}
+						Logger.warning(`Embed link not found in ${filePath}, keeping the embed HTML instead.`);
+					}
+
+					let html = node.outerHTML;
+					if(script && !scriptsAdded.has(script)) {
+						scriptsAdded.add(script);
+						html += `\n<script async src="${entities.escapeAttribute(script)}"></script>`;
+					}
+					return node.isBlock ? `\n\n${html}\n\n` : html;
 				}
 			});
 		}

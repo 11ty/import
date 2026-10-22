@@ -62,6 +62,16 @@ class Importer {
 		}
 	}
 
+	// Third-party embeds to keep as HTML on markdown conversion: `{ selector, script, output }` (class name, optional script URL, "html" or "link")
+	addEmbed(name, options) {
+		this.markdownService.addEmbed(name, options);
+	}
+
+	// Built-in embed names: instagram, twitter, tiktok, bluesky
+	removeEmbed(name) {
+		this.markdownService.removeEmbed(name);
+	}
+
 	getCounts() {
 		let fetcherCounts = this.fetcher.getCounts();
 		return {
