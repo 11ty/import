@@ -716,6 +716,9 @@ class Importer {
 			return Utils.pathJoin(this.#outputFolder, pathname);
 		}
 
+		// URLs ending in `.html` (e.g. Blogger, some WordPress permalinks) get the output extension instead
+		fallbackPath = fallbackPath.replace(/\.html?$/i, "");
+
 		// WordPress draft posts only have a `p` query param e.g. ?p=ID_NUMBER
 		if(fallbackPath === "/") {
 			fallbackPath = Fetcher.createHash(entry.url);

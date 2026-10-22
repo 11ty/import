@@ -97,9 +97,25 @@ export class Rss extends DataSource {
 		}
 	}
 
+	getCommentFeedUrl(uuid) {
+		return this.#commentFeeds.get(uuid);
+	}
+
+	getCommentsFromData(data) {
+		return DataSource.sortComments(MediaRss.toArray(data?.rss?.channel?.item).map(item => {
+			return DataSource.cleanComment({
+				id: item.guid?.["#text"] ?? item.guid ?? item.link,
+				url: item.link,
+				author: { name: item["dc:creator"] },
+				date: this.toDateObj(item.pubDate),
+				content: entities.decodeHTML(item["content:encoded"] || item.description || ""),
+			});
+		}));
+	}
+
 	async addComments(entries) {
 		await Promise.all(entries.map(async entry => {
-			let url = this.#commentFeeds.get(entry.uuid);
+			let url = this.getCommentFeedUrl(entry.uuid);
 			if(!url) {
 				// Nothing to request, existing comments are kept
 				this.setCommentsIncomplete([entry]);
@@ -107,15 +123,7 @@ export class Rss extends DataSource {
 			}
 
 			let data = await this.getOptionalData(url, this.getType(), [entry]);
-			entry.comments = DataSource.sortComments(MediaRss.toArray(data?.rss?.channel?.item).map(item => {
-				return DataSource.cleanComment({
-					id: item.guid?.["#text"] ?? item.guid ?? item.link,
-					url: item.link,
-					author: { name: item["dc:creator"] },
-					date: this.toDateObj(item.pubDate),
-					content: entities.decodeHTML(item["content:encoded"] || item.description || ""),
-				});
-			}));
+			entry.comments = this.getCommentsFromData(data);
 		}));
 	}
 }

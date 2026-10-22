@@ -525,6 +525,49 @@ test("WordPress API discovery throws when no API is found", async (t) => {
 	});
 });
 
+test("WordPress falls back to the paged RSS feed when no API is found", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	importer.addSource("wordpress", "https://example.com/");
+
+	let feed = {
+		rss: {
+			channel: {
+				title: "Example",
+				link: "https://example.com/",
+				item: [{
+					title: "Hello &#8217;world",
+					link: "https://example.com/2024/01/hello.html?utm_source=rss&#038;utm_medium=rss",
+					"dc:creator": "Zach",
+					pubDate: "Mon, 01 Jan 2024 12:00:00 +0000",
+					category: ["Economics", "Uncategorized"],
+					guid: { "#text": "https://example.com/?p=123", "@_isPermaLink": "false" },
+					description: "<p>Excerpt</p>\n<p>The post <a href=\"https://example.com/2024/01/hello.html\">Hello</a> appeared first on <a href=\"https://example.com\">Example</a>.</p>",
+					"content:encoded": "<p>Content</p>",
+				}],
+			},
+		},
+	};
+	importer.addDataOverride("wordpress", "https://example.com/feed?paged=1", feed);
+	importer.addDataOverride("wordpress", "https://example.com/feed?paged=2", { rss: { channel: {} } });
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.equal(entries.length, 1);
+	assert.equal(entries[0].uuid, "11ty/import::wordpress::https://example.com/?p=123");
+	assert.equal(entries[0].type, "wordpress");
+	assert.equal(entries[0].title, "Hello ’world");
+	assert.equal(entries[0].url, "https://example.com/2024/01/hello.html");
+	// `.html` isn’t doubled
+	assert.equal(entries[0].filePath, "2024/01/hello.html");
+	assert.equal(entries[0].description, "Excerpt");
+	assert.deepEqual(entries[0].authors, [{ name: "Zach" }]);
+	assert.deepEqual(entries[0].tags, ["Economics"]);
+	assert.deepEqual(entries[0].metadata, { id: 123, slug: "hello", postType: "post", categories: ["Economics"] });
+});
+
 test("Author avatars are downloaded as assets", async (t) => {
 	let importer = new Importer();
 

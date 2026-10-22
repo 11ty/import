@@ -33,11 +33,6 @@ export class Blogger extends DataSource {
 		return url.hostname === "blogger.googleusercontent.com" || /^\d\.bp\.blogspot\.com$/.test(url.hostname);
 	}
 
-	// Post URLs end in `.html`
-	static getFilePath(url) {
-		return new URL(url).pathname.replace(/\.html$/, "");
-	}
-
 	async getEntries() {
 		let entries = [];
 		for(let feed of Blogger.FEEDS) {

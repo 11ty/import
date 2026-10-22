@@ -93,7 +93,7 @@ npx @11ty/import [type] [target] --persist=github:zachleat/wp-awesome
 - `jsonfeed` (URL)
 - `rss` (URL)
 - `squarespace` (collection, post, or page URL, e.g. a blog home page)
-- `wordpress` (blog home page URL, discovers the site’s own REST API or falls back to the WordPress.com API)
+- `wordpress` (blog home page URL, discovers the site’s own REST API or falls back to the WordPress.com API, then to the site’s paged RSS feed for posts only)
 - `wordpressxml` (WordPress export file path or URL)
 - `youtubeuser` (user id)
 

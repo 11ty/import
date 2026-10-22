@@ -1,6 +1,10 @@
+import * as entities from "entities";
 import { DateCompare } from "@11ty/eleventy-utils";
 
 import { DataSource } from "../DataSource.js";
+import { Logger } from "../Logger.js";
+import { MediaRss } from "../MediaRss.js";
+import { Rss } from "./Rss.js";
 
 // Load WORDPRESS_USERNAME and WORDPRESS_PASSWORD from an optional .env file
 try {
@@ -28,6 +32,9 @@ export class WordPressApi extends DataSource {
 	#apiRoot;
 	#types;
 	#defaultCategoryId;
+	// Paged RSS feed fallback for sites without a reachable REST API (posts only)
+	#feed;
+	#feedRoot;
 
 	constructor(url) {
 		super();
@@ -150,8 +157,58 @@ export class WordPressApi extends DataSource {
 		}
 	}
 
+	#getFeedRootCandidates() {
+		let { origin, pathname } = new URL(this.url);
+		if(!pathname.endsWith("/")) {
+			pathname += "/";
+		}
+
+		return [
+			// No trailing slash, some firewalls only allow this exact path
+			{ prefix: `${origin}${pathname}feed`, separator: "?" },
+			// Sites without pretty permalinks
+			{ prefix: `${origin}${pathname}?feed=rss2`, separator: "&" },
+		];
+	}
+
+	async #discoverFeedRoot() {
+		for(let candidate of this.#getFeedRootCandidates()) {
+			let url = WordPressApi.#getFeedPageUrl(candidate, 1);
+			try {
+				let data = await this.getData(url, "xml", false);
+				if(data?.rss?.channel) {
+					this.#feedRoot = candidate;
+					this.#feed = new Rss(this.url);
+					return true;
+				}
+			} catch(e) {
+				// Expected while discovering
+				this.fetcher.clearError(url);
+			}
+		}
+
+		return false;
+	}
+
+	static #getFeedPageUrl(feedRoot, pageNumber) {
+		return `${feedRoot.prefix}${feedRoot.separator}paged=${pageNumber}`;
+	}
+
 	async getEntries() {
-		await this.#discoverApiRoot();
+		try {
+			await this.#discoverApiRoot();
+		} catch(e) {
+			if(!await this.#discoverFeedRoot()) {
+				throw e;
+			}
+
+			if(this.isVerbose) {
+				Logger.log(`No WordPress REST API found for ${this.url}, importing posts from its RSS feed instead.`);
+			}
+
+			return super.getEntries();
+		}
+
 		await this.#fetchDefaultCategoryId();
 
 		let entries = [];
@@ -186,6 +243,10 @@ export class WordPressApi extends DataSource {
 
 	// Approved comments (the API default) are requested in bulk for up to 100 posts at a time
 	async addComments(entries) {
+		if(this.#feed) {
+			return this.#addFeedComments(entries);
+		}
+
 		let entriesById = new Map(entries.filter(entry => entry.metadata?.id).map(entry => [entry.metadata.id, entry]));
 		let ids = Array.from(entriesById.keys());
 
@@ -218,8 +279,27 @@ export class WordPressApi extends DataSource {
 		}
 	}
 
+	async #addFeedComments(entries) {
+		await Promise.all(entries.map(async entry => {
+			let url = this.#feed.getCommentFeedUrl(entry.uuid);
+			if(!url) {
+				// Nothing to request, existing comments are kept
+				this.setCommentsIncomplete([entry]);
+				return;
+			}
+
+			let data = await this.getOptionalData(url, "xml", [entry]);
+			entry.comments = this.#feed.getCommentsFromData(data);
+		}));
+	}
+
 	// some pagination errors just mean there are no more pages
 	async isErrorWorthWorryingAbout(e) {
+		// Feed pages past the last one are not found
+		if(this.#feed && e?.cause?.status === 404) {
+			return false;
+		}
+
 		let responseText;
 		if(e?.cause instanceof Response) {
 			responseText = (await e.cause.text() || "").trim();
@@ -249,7 +329,7 @@ export class WordPressApi extends DataSource {
 	}
 
 	getType() {
-		return "json";
+		return this.#feed ? "xml" : "json";
 	}
 
 	getSiteUrl() {
@@ -278,6 +358,10 @@ export class WordPressApi extends DataSource {
 
 	getUrl() {
 		// return function for paging
+		if(this.#feed) {
+			return (pageNumber = 1) => WordPressApi.#getFeedPageUrl(this.#feedRoot, pageNumber);
+		}
+
 		return (pageNumber = 1) => {
 			// status=publish,future,draft,pending,private
 			// status=any
@@ -302,6 +386,10 @@ export class WordPressApi extends DataSource {
 	}
 
 	getHeaders() {
+		if(this.#feed) {
+			return {};
+		}
+
 		if(this.#apiRoot?.isWordPressDotCom) {
 			if(process.env.WORDPRESSDOTCOM_TOKEN) {
 				// OAuth2 access token, see https://developer.wordpress.com/docs/oauth2/
@@ -324,6 +412,10 @@ export class WordPressApi extends DataSource {
 	}
 
 	getEntriesFromData(data) {
+		if(this.#feed) {
+			return this.#feed.getEntriesFromData(data);
+		}
+
 		if(Array.isArray(data)) {
 			return data;
 		}
@@ -332,11 +424,24 @@ export class WordPressApi extends DataSource {
 	}
 
 	getUrlFromEntry(entry) {
+		if(this.#feed) {
+			// Feed links can include tracking parameters (e.g. `utm_source=rss`)
+			let url = new URL(entities.decodeHTML(entry.link));
+			for(let key of Array.from(url.searchParams.keys())) {
+				if(key.startsWith("utm_")) {
+					url.searchParams.delete(key);
+				}
+			}
+			return url.toString();
+		}
+
 		return entry.link;
 	}
 
+	// Feed and API guids match (e.g. `https://example.com/?p=123`)
 	getUniqueIdFromEntry(entry) {
-		return `${DataSource.UUID_PREFIX}::${WordPressApi.TYPE}::${entry.guid.rendered}`;
+		let guid = this.#feed ? entry.guid?.["#text"] ?? entry.guid ?? entry.link : entry.guid.rendered;
+		return `${DataSource.UUID_PREFIX}::${WordPressApi.TYPE}::${guid}`;
 	}
 
 	// stock WordPress is single-author
@@ -396,6 +501,10 @@ export class WordPressApi extends DataSource {
 	}
 
 	getRawEntryDates(rawEntry) {
+		if(this.#feed) {
+			return this.#feed.getRawEntryDates(rawEntry);
+		}
+
 		return {
 			created: this.toDateObj(rawEntry.date_gmt),
 			updated: this.toDateObj(rawEntry.modified_gmt),
@@ -412,8 +521,59 @@ export class WordPressApi extends DataSource {
 		return DataSource.htmlToPlainText(rawEntry.yoast_head_json?.description || rawEntry.yoast_head_json?.og_description || rawEntry.excerpt?.rendered);
 	}
 
+	// Feed categories include tags
+	#cleanFeedEntry(rawEntry, data) {
+		let entry = this.#feed.cleanEntry(rawEntry, data);
+		let url = this.getUrlFromEntry(rawEntry);
+
+		let metadata = { ...entry.metadata };
+		let id = entry.uuid.match(/[?&]p=(\d+)$/)?.[1];
+		if(id) {
+			metadata.id = Number(id);
+		}
+		let slug = new URL(url).pathname.split("/").filter(Boolean).pop()?.replace(/\.html?$/, "");
+		if(slug) {
+			metadata.slug = slug;
+		}
+		if(entry.metadata?.media?.featuredImage) {
+			metadata.featuredImage = entry.metadata.media.featuredImage;
+		}
+		metadata.postType = "post";
+
+		let categories = MediaRss.toArray(rawEntry.category).map(String).filter(name => !WordPressApi.IGNORED_CATEGORIES.includes(name));
+		if(categories.length) {
+			metadata.categories = categories;
+		}
+
+		let cleanEntry = {
+			...entry,
+			uuid: this.getUniqueIdFromEntry(rawEntry),
+			type: WordPressApi.TYPE,
+			url,
+			content: entry.content || "",
+			contentType: "html",
+			metadata,
+		};
+
+		// Excerpts can end with “The post … appeared first on …”
+		let description = DataSource.htmlToPlainText(rawEntry["content:encoded"] && rawEntry.description?.replace(/<p>The post <a[^>]*>.*?<\/a> appeared first on .*?<\/p>\s*$/s, ""));
+		if(description) {
+			cleanEntry.description = description;
+		}
+
+		if(categories.length) {
+			cleanEntry.tags = categories;
+		}
+
+		return cleanEntry;
+	}
+
 	// Supports: Title, Author, Published/Updated Dates
 	async cleanEntry(rawEntry, data) {
+		if(this.#feed) {
+			return this.#cleanFeedEntry(rawEntry, data);
+		}
+
 		let url = this.getUrlFromEntry(rawEntry);
 		let status = this.cleanStatus(rawEntry.status)
 
