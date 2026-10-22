@@ -76,6 +76,7 @@ npx @11ty/import [type] [target] --persist=github:zachleat/wp-awesome
 - `bluesky` (username)
 - `fediverse` (username)
 - `rss` (URL)
+- `squarespace` (collection, post, or page URL, e.g. a blog home page)
 - `wordpress` (blog home page URL, discovers the site’s own REST API or falls back to the WordPress.com API)
 - `wordpressxml` (WordPress export file path or URL)
 - `youtubeuser` (user id)
@@ -104,6 +105,16 @@ npx @11ty/import wordpress https://en.blog.wordpress.com
 
 # Import published and draft posts and pages from a WordPress export file (Tools → Export)
 npx @11ty/import wordpressxml ./example.WordPress.2024-01-01.xml --posttypes=posts,pages,product
+```
+
+#### Squarespace
+
+```sh
+# Import all posts from a Squarespace blog (or another collection like events or products)
+npx @11ty/import squarespace https://engineering.squarespace.com/blog
+
+# Import a single page or post
+npx @11ty/import squarespace https://engineering.squarespace.com/about
 ```
 
 #### Atom Feeds
@@ -144,6 +155,7 @@ Comments are imported by default to a [template data file](https://www.11ty.dev/
 Comments with content warnings or from authors that opted out of wider distribution have `private: true` and only `id`, `parentId`, `url`, and `date` (link to them instead).
 
 - `wordpress`, `wordpressxml`: approved comments (no commenter emails or IP addresses)
+- `squarespace`: approved comments on collection items (commenter names only)
 - `youtubeuser`: requires a `YOUTUBE_API_KEY` environment variable ([YouTube Data API](https://developers.google.com/youtube/v3/getting-started))
 - `bluesky`: replies (private when labeled or the author discourages showing their account to logged-out users)
 - `fediverse`: public and unlisted replies known to the user’s server (private when unlisted, marked sensitive, or the author opted out of search engine indexing)

@@ -10,6 +10,7 @@ import { Fetcher } from "../src/Fetcher.js";
 import { HtmlTransformer } from "../src/HtmlTransformer.js";
 import { MarkdownToHtml } from "../src/MarkdownToHtml.js";
 import { WordPressApi } from "../src/DataSource/WordPressApi.js";
+import { Squarespace } from "../src/DataSource/Squarespace.js";
 
 function cleanContent(content) {
 	// trim extra whitespace (dirty workaround for trailing whitespace)
@@ -1632,4 +1633,187 @@ test("YouTube comments require an API key", async (t) => {
 		content: "Great talk",
 	});
 	assert.equal(entries.filter(entry => entry.comments).length, 1);
+});
+
+function getSquarespaceItem(id, publishOn, extra = {}) {
+	return {
+		id,
+		publishOn,
+		addedOn: publishOn,
+		updatedOn: publishOn + 1000,
+		urlId: `2026/post-${id}`,
+		fullUrl: `/blog/2026/post-${id}`,
+		title: `Post ${id} &amp; more`,
+		tags: [],
+		categories: [],
+		body: `<p>Post ${id}</p>`,
+		...extra,
+	};
+}
+
+test("Squarespace collection", async (t) => {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("squarespace", "https://example.com/blog");
+
+	importer.addDataOverride("squarespace", "https://example.com/blog?format=json", {
+		collection: { typeName: "blog" },
+		// `nextPageUrl` is relative to the collection’s own path, not the requested URL
+		pagination: { nextPage: true, nextPageOffset: 1700000000000, nextPageUrl: "/?offset=1700000000000" },
+		items: [getSquarespaceItem("a", 1784908800742, {
+			title: "Stain the Page",
+			author: { displayName: "Hannah Tipperman", avatarAssetUrl: "https://images.squarespace-cdn.com/avatar.png" },
+			tags: ["web design"],
+			categories: ["Engineering"],
+			assetUrl: "https://images.squarespace-cdn.com/content/v1/thumbnail.png",
+			contentType: "image/png",
+			excerpt: `<p style="white-space:pre-wrap;">An excerpt.</p>`,
+			body: [
+				`<style>.sqs-block { color: red; }</style>`,
+				`<div class="sqs-block-content"><p class="" style="white-space:pre-wrap;">Hello <strong>world</strong>.</p></div>`,
+				`<div class="sqs-block-content">&nbsp;</div>`,
+				`<p class="">&nbsp;</p>`,
+				`<noscript><img src="https://images.squarespace-cdn.com/gallery.png" alt="Gallery"></noscript>`,
+				`<img class="thumb-image" data-src="https://images.squarespace-cdn.com/gallery.png" alt="Gallery">`,
+			].join("\n\n\n"),
+		})],
+	});
+	importer.addDataOverride("squarespace", "https://example.com/blog?format=json&offset=1700000000000", {
+		collection: { typeName: "blog" },
+		pagination: { nextPage: false },
+		items: [getSquarespaceItem("b", 1600000000000, {
+			seoData: { seoDescription: "SEO description" },
+			assetUrl: "https://static1.squarespace.com/static/no-image",
+		})],
+	});
+
+	let entries = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(entries.length, 2);
+
+	let [post, second] = entries;
+	assert.equal(post.uuid, "11ty/import::squarespace::a");
+	assert.equal(post.type, "squarespace");
+	assert.equal(post.title, "Stain the Page");
+	assert.equal(post.url, "https://example.com/blog/2026/post-a");
+	assert.equal(post.filePath, "blog/2026/post-a.md");
+	assert.deepEqual(post.date, new Date(1784908800742));
+	assert.deepEqual(post.dateUpdated, new Date(1784908801742));
+	assert.deepEqual(post.authors, [{ name: "Hannah Tipperman", avatarUrl: "https://images.squarespace-cdn.com/avatar.png" }]);
+	assert.equal(post.description, "An excerpt.");
+	assert.deepEqual(post.tags, ["Engineering"]);
+	assert.deepEqual(post.metadata, {
+		id: "a",
+		postType: "blog",
+		slug: "post-a",
+		media: { featuredImage: "https://images.squarespace-cdn.com/content/v1/thumbnail.png" },
+		categories: ["Engineering"],
+		tags: ["web design"],
+	});
+	assert.equal(post.content, `Hello **world**.\n\n![Gallery](https://images.squarespace-cdn.com/gallery.png)`);
+
+	assert.equal(second.title, "Post b & more");
+	assert.equal(second.description, "SEO description");
+	assert.equal(second.tags, undefined);
+	assert.deepEqual(second.metadata, { id: "b", postType: "blog", slug: "post-b" });
+});
+
+test("Squarespace page and single item", async (t) => {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("squarespace", "https://example.com/about");
+	importer.addSource("squarespace", "https://example.com/blog/2026/post-c");
+
+	importer.addDataOverride("squarespace", "https://example.com/about?format=json", {
+		collection: { id: "page1", typeName: "page", title: "About", fullUrl: "/about", updatedOn: 1757026662102, description: "<p>About us.</p>" },
+		mainContent: `<div class="sqs-layout"><h1>About</h1></div>`,
+	});
+	importer.addDataOverride("squarespace", "https://example.com/blog/2026/post-c?format=json", {
+		collection: { typeName: "blog" },
+		item: getSquarespaceItem("c", 1700000000000),
+	});
+
+	let [page, item] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(page.uuid, "11ty/import::squarespace::page1");
+	assert.equal(page.url, "https://example.com/about");
+	assert.equal(page.description, "About us.");
+	assert.deepEqual(page.date, new Date(1757026662102));
+	assert.deepEqual(page.metadata, { id: "page1", postType: "page" });
+	assert.equal(page.content, "# About");
+
+	assert.equal(item.url, "https://example.com/blog/2026/post-c");
+	assert.equal(item.content, "Post c");
+});
+
+test("Squarespace links to the site are root-relative and uploads are downloaded", async (t) => {
+	let { transformer, fetched } = getLinkTransformer();
+	let entry = {
+		url: "https://example.com/blog/2026/hello",
+		source: new Squarespace("https://example.com/blog"),
+	};
+
+	let html = await transformer.transform([
+		`<a href="https://example.com/about">Internal</a>`,
+		`<a href="/s/document.pdf">Upload</a>`,
+		`<a href="https://static1.squarespace.com/static/file.zip">Static</a>`,
+		`<a href="https://other.com/s/file.pdf">External</a>`,
+	].join("\n"), entry);
+
+	assert.equal(html, [
+		`<a href="/about">Internal</a>`,
+		`<a href="assets/document.pdf">Upload</a>`,
+		`<a href="assets/file.zip">Static</a>`,
+		`<a href="https://other.com/s/file.pdf">External</a>`,
+	].join("\n"));
+
+	assert.deepEqual(fetched, [
+		"https://example.com/s/document.pdf",
+		"https://static1.squarespace.com/static/file.zip",
+	]);
+});
+
+test("Squarespace comments", async (t) => {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("squarespace", "https://example.com/blog");
+
+	importer.addDataOverride("squarespace", "https://example.com/blog?format=json", {
+		collection: { typeName: "blog" },
+		pagination: { nextPage: false },
+		items: [
+			getSquarespaceItem("a", 1700000000000, { publicCommentCount: 3 }),
+			// No comments, so none are requested
+			getSquarespaceItem("b", 1600000000000, { publicCommentCount: 0 }),
+		],
+	});
+
+	let comment = (id, addedOn, extra = {}) => ({ id, authorName: `Author ${id}`, ancestors: [], status: 1, cleared: false, addedOn, body: `<p>Comment ${id}</p>`, ...extra });
+	importer.addDataOverride("squarespace", "https://example.com/api/comment/GetComments?targetId=a&targetType=1&page=1", {
+		comments: [
+			comment("c2", 1700000002000, { ancestors: ["c1"], depth: 1 }),
+			comment("c1", 1700000001000),
+			comment("spam", 1700000003000, { status: 2 }),
+		],
+		totalComments: 4,
+	});
+	importer.addDataOverride("squarespace", "https://example.com/api/comment/GetComments?targetId=a&targetType=1&page=2", {
+		comments: [comment("c3", 1700000004000)],
+		totalComments: 4,
+	});
+
+	let [post, second] = await importer.getEntries();
+	assert.deepEqual(post.comments, [
+		{ id: "c1", parentId: 0, author: { name: "Author c1" }, date: new Date(1700000001000), content: "<p>Comment c1</p>" },
+		{ id: "c2", parentId: "c1", author: { name: "Author c2" }, date: new Date(1700000002000), content: "<p>Comment c2</p>" },
+		{ id: "c3", parentId: 0, author: { name: "Author c3" }, date: new Date(1700000004000), content: "<p>Comment c3</p>" },
+	]);
+	assert.equal(second.comments, undefined);
 });

@@ -21,6 +21,7 @@ import { WordPressApi } from "./DataSource/WordPressApi.js";
 import { WordPressXml } from "./DataSource/WordPressXml.js";
 import { BlueskyUser } from "./DataSource/BlueskyUser.js";
 import { FediverseUser } from "./DataSource/FediverseUser.js";
+import { Squarespace } from "./DataSource/Squarespace.js";
 
 import pkg from "../package.json" with { type: "json" };
 
@@ -187,6 +188,8 @@ class Importer {
 				cls = BlueskyUser; // RSS
 			} else if(type === "fediverse") {
 				cls = FediverseUser; // RSS
+			} else if(type === "squarespace") {
+				cls = Squarespace;
 			}
 		} else if(typeof type === "function") {
 			cls = type;
@@ -301,6 +304,14 @@ class Importer {
 
 			// TODO parallel
 			cleanEntry.metadata.media[mediaType] = localUrl;
+			this.#keepAsset(localUrl, cleanEntry);
+		}
+	}
+
+	// Assets referenced in front matter aren’t removed with unused `srcset` assets from the same URL
+	#keepAsset(localUrl, entry) {
+		if(typeof localUrl === "string" && entry.filePath) {
+			this.markdownService.assetsToKeep.add(this.markdownService.recontextifyRelativeAssetPath(localUrl, entry.filePath));
 		}
 	}
 
@@ -321,6 +332,7 @@ class Importer {
 			let transformed = { ...author };
 			if(author.avatarUrl) {
 				transformed.avatarUrl = await this.fetcher.fetchAsset(author.avatarUrl, cleanEntry);
+				this.#keepAsset(transformed.avatarUrl, cleanEntry);
 			}
 
 			let relativeUrl = author.url && HtmlTransformer.getSiteRelativeUrl(author.url, siteUrl);

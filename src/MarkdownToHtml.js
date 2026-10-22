@@ -417,6 +417,9 @@ class MarkdownToHtml {
 				try {
 					// prefer highest-resolution (first) srcset
 					let [src, ...remainingUrls] = MarkdownToHtml.getImageSrcUrls(node.getAttribute("srcset"), node.getAttribute("src"));
+					if(!src) {
+						return "";
+					}
 
 					this.assetsToKeep.add(this.recontextifyRelativeAssetPath(src, filePath));
 
