@@ -196,6 +196,7 @@ class Importer {
 		let identifier;
 		let label;
 		let filepathFormat;
+		let postTypes;
 
 		if(typeof options === "string") {
 			identifier = options;
@@ -203,6 +204,7 @@ class Importer {
 			identifier = options.url || options.id;
 			label = options.label;
 			filepathFormat = options.filepathFormat;
+			postTypes = options.postTypes;
 		}
 
 		let source = new cls(identifier);
@@ -224,6 +226,13 @@ class Importer {
 
 		if(filepathFormat) {
 			source.setFilepathFormatFunction(filepathFormat);
+		}
+
+		if(postTypes) {
+			if(typeof source.setPostTypes !== "function") {
+				throw new Error(`The postTypes option is not supported by the ${source.constructor.TYPE} source type.`);
+			}
+			source.setPostTypes(postTypes);
 		}
 
 		this.sources.push(source);

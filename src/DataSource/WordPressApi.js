@@ -16,6 +16,11 @@ export class WordPressApi extends DataSource {
 	static TYPE = "wordpress";
 	static TYPE_FRIENDLY = "WordPress";
 	static IGNORED_CATEGORIES = ["Uncategorized"];
+	static DEFAULT_POST_TYPES = ["posts", "pages"];
+	static BUILTIN_REST_BASES = ["posts", "pages"];
+
+	#postTypes = WordPressApi.DEFAULT_POST_TYPES;
+	#restBase = "posts";
 
 	constructor(url) {
 		if(HostedWordPressApi.isValid(url)) {
@@ -24,6 +29,56 @@ export class WordPressApi extends DataSource {
 
 		super();
 		this.url = url;
+	}
+
+	// Accepts post type slugs (`page`, `product`) or REST bases (`pages`, `products`)
+	setPostTypes(types) {
+		if(typeof types === "string") {
+			types = types.split(",");
+		}
+
+		types = (types || []).map(type => type.trim()).filter(Boolean);
+		this.#postTypes = types.length ? types : WordPressApi.DEFAULT_POST_TYPES;
+	}
+
+	getPostTypes() {
+		return this.#postTypes;
+	}
+
+	async #getRestBases() {
+		let builtins = { post: "posts", page: "pages" };
+		let unknown = this.#postTypes.filter(type => !WordPressApi.BUILTIN_REST_BASES.includes(type) && !builtins[type]);
+
+		let types = {};
+		if(unknown.length > 0) {
+			// Warning: extra API call
+			types = await this.getData(this.#getSubtypeUrl("types"), this.getType()) || {};
+		}
+
+		let restBases = this.#postTypes.map(type => {
+			if(builtins[type]) {
+				return builtins[type];
+			}
+
+			for(let [slug, typeData] of Object.entries(types)) {
+				if(slug === type || typeData?.rest_base === type) {
+					return typeData.rest_base || slug;
+				}
+			}
+
+			return type;
+		});
+
+		return Array.from(new Set(restBases));
+	}
+
+	async getEntries() {
+		let entries = [];
+		for(let restBase of await this.#getRestBases()) {
+			this.#restBase = restBase;
+			entries.push(...await super.getEntries());
+		}
+		return entries;
 	}
 
 	// some pagination errors just mean there are no more pages
@@ -97,7 +152,7 @@ export class WordPressApi extends DataSource {
 				statusStr = `&status=${encodeURIComponent("publish,draft")}`;
 			}
 
-			return this.#getSubtypeUrl("posts", `?page=${pageNumber}&per_page=100${statusStr}${withinStr}`);
+			return this.#getSubtypeUrl(this.#restBase, `?page=${pageNumber}&per_page=100${statusStr}${withinStr}`);
 		};
 	}
 
@@ -197,12 +252,17 @@ export class WordPressApi extends DataSource {
 			metadata.media = media;
 		}
 
-		let categories = await this.#getCategories(rawEntry.categories);
+		if(rawEntry.type) {
+			metadata.postType = rawEntry.type;
+		}
+
+		// Pages and custom post types may not support categories or tags
+		let categories = await this.#getCategories(rawEntry.categories || []);
 		if(categories.length) {
 			metadata.categories = categories;
 		}
 
-		let tags = await this.#getTags(rawEntry.tags);
+		let tags = await this.#getTags(rawEntry.tags || []);
 		if(tags.length) {
 			metadata.tags = tags;
 		}
@@ -217,7 +277,7 @@ export class WordPressApi extends DataSource {
 			authors: await this.#getAuthors(rawEntry.author),
 			date: created,
 			dateUpdated: updated,
-			content: rawEntry.content.rendered,
+			content: rawEntry.content?.rendered || "",
 			contentType: "html",
 			status,
 			metadata,

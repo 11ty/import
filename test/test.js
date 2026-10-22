@@ -112,13 +112,9 @@ test("WordPress import", async (t) => {
 
 	importer.addSource("wordpress", "https://blog.fontawesome.com/");
 
-	if(process.env.WORDPRESS_USERNAME) {
-		importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/posts/?page=1&per_page=100&status=publish%2Cdraft", require("./sources/blog-awesome-posts.json"));
-		importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/posts/?page=2&per_page=100&status=publish%2Cdraft", []);
-	} else {
-		importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/posts/?page=1&per_page=100", require("./sources/blog-awesome-posts.json"));
-		importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/posts/?page=2&per_page=100", []);
-	}
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 1), require("./sources/blog-awesome-posts.json"));
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 2), []);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("pages", 1), []);
 
 	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/categories/1", require("./sources/blog-awesome-categories.json"));
 	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/users/155431370", require("./sources/blog-awesome-author.json"));
@@ -171,6 +167,74 @@ We’ll keep fine-tuning that sweet, sweet recipe until February. Believe us; th
 
 	assert.equal(post.content.length, 1634);
 	assert.equal(post.authors[0].name, "Matt Johnson");
+});
+
+function getWordPressPagedUrl(restBase, pageNumber) {
+	let status = process.env.WORDPRESS_USERNAME ? "&status=publish%2Cdraft" : "";
+	return `https://blog.fontawesome.com/wp-json/wp/v2/${restBase}/?page=${pageNumber}&per_page=100${status}`;
+}
+
+test("WordPress pages and custom post types, issue #17", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("wordpress", {
+		url: "https://blog.fontawesome.com/",
+		postTypes: "posts,page,product",
+	});
+
+	let [post] = require("./sources/blog-awesome-posts.json");
+	let page = {
+		...post,
+		id: 1,
+		type: "page",
+		guid: { rendered: "https://blog.fontawesome.com/?page_id=1" },
+		link: "https://blog.fontawesome.com/about/",
+		slug: "about",
+		title: { rendered: "About" },
+		content: { rendered: "<p>About page</p>" },
+		categories: undefined,
+		tags: undefined,
+	};
+	let product = {
+		...page,
+		id: 2,
+		type: "product",
+		guid: { rendered: "https://blog.fontawesome.com/?post_type=product&p=2" },
+		link: "https://blog.fontawesome.com/product/icons/",
+		slug: "icons",
+		title: { rendered: "Icons" },
+		content: undefined,
+	};
+
+	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/types/", {
+		product: { slug: "product", rest_base: "products" },
+	});
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 1), [post]);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 2), []);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("pages", 1), [page]);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("pages", 2), []);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("products", 1), [product]);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("products", 2), []);
+	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/categories/1", require("./sources/blog-awesome-categories.json"));
+	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/users/155431370", require("./sources/blog-awesome-author.json"));
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.deepEqual(entries.map(entry => entry.metadata.postType), ["post", "page", "product"]);
+	assert.deepEqual(entries.map(entry => entry.title), [post.title.rendered, "About", "Icons"]);
+	assert.equal(entries[1].metadata.categories, undefined);
+	assert.equal(entries[2].content, "");
+});
+
+test("postTypes is not supported by other source types", async (t) => {
+	let importer = new Importer();
+
+	assert.throws(() => {
+		importer.addSource("rss", { url: "https://example.com/feed.xml", postTypes: "pages" });
+	});
 });
 
 test("addSource using DataSource", async (t) => {

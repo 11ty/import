@@ -70,12 +70,16 @@ let { positionals, values } = parseArgs({
 		preserve: {
 			type: "string",
 			default: "",
+		},
+		posttypes: {
+			type: "string",
+			default: "",
 		}
 	},
 });
 
 let [ type, target ] = positionals;
-let { quiet, dryrun, output, help, version, overwrite, cacheduration, format, persist, assetrefs, within, preserve } = values;
+let { quiet, dryrun, output, help, version, overwrite, cacheduration, format, persist, assetrefs, within, preserve, posttypes } = values;
 
 if(version) {
 	const require = createRequire(import.meta.url);
@@ -120,6 +124,9 @@ if(help) {
   npx @11ty/import [type] [target] --assetrefs=absolute
   npx @11ty/import [type] [target] --assetrefs=colocate
   npx @11ty/import [type] [target] --assetrefs=disabled
+
+  # WordPress post types to import (default: posts,pages)
+  npx @11ty/import wordpress [target] --posttypes=posts,pages,product
 `);
 
 	process.exit();
@@ -141,7 +148,7 @@ importer.setCacheDuration(cacheduration);
 importer.setVerbose(!quiet);
 importer.setSafeMode(!overwrite);
 importer.setDryRun(dryrun);
-importer.addSource(type, target);
+importer.addSource(type, posttypes ? { url: target, postTypes: posttypes } : target);
 
 // TODO wire these up to CLI
 importer.setDraftsFolder("drafts");

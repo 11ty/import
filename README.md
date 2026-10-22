@@ -61,6 +61,9 @@ npx @11ty/import [type] [target] --assetrefs=colocate
 # Don’t download any assets
 npx @11ty/import [type] [target] --assetrefs=disabled
 
+# WordPress post types to import (default: posts,pages)
+npx @11ty/import wordpress [target] --posttypes=posts,pages,product
+
 # EXPERIMENTAL: Persist *new* non-draft content
 # - `github` persist type requires a `GITHUB_TOKEN` environment variable.
 npx @11ty/import [type] [target] --persist=github:zachleat/wp-awesome
@@ -85,10 +88,13 @@ npx @11ty/import youtubeuser UCskGTioqrMBcw8pd14_334A
 #### WordPress
 
 ```sh
-# Import *all* posts from the WordPress API
+# Import *all* posts and pages from the WordPress API
 # Draft posts available when WORDPRESS_USERNAME and WORDPRESS_PASSWORD environment
 # variables are supplied, read more: https://www.11ty.dev/docs/environment-vars/
 npx @11ty/import wordpress https://blog.fontawesome.com
+
+# Import posts, pages, and a custom post type (must be available in the REST API)
+npx @11ty/import wordpress https://blog.fontawesome.com --posttypes=posts,pages,product
 ```
 
 #### Atom Feeds
