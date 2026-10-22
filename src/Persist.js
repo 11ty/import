@@ -1,5 +1,3 @@
-import { GitHubPublisher } from "github-publish";
-
 import { Logger } from "./Logger.js";
 
 class Persist {
@@ -21,7 +19,6 @@ class Persist {
 		}
 	}
 
-	#publisher;
 	#verboseMode = true;
 	#dryRun = false;
 
@@ -65,16 +62,72 @@ class Persist {
 		this.branch = branch;
 	}
 
-	get publisher() {
+	getContentsUrl(filePath) {
 		if(!this.canPersist()) {
 			throw new Error("Missing Persist target. Have you called setTarget()?");
 		}
 
-		if(!this.#publisher) {
-			this.#publisher = new GitHubPublisher(process.env.GITHUB_TOKEN, this.username, this.repository, this.branch);
+		let path = filePath.split("/").map(segment => encodeURIComponent(segment)).join("/");
+		return `https://api.github.com/repos/${this.username}/${this.repository}/contents/${path}`;
+	}
+
+	// https://docs.github.com/en/rest/repos/contents
+	async githubRequest(filePath, options = {}) {
+		let url = new URL(this.getContentsUrl(filePath));
+		if(this.branch && !options.method) {
+			url.searchParams.set("ref", this.branch);
 		}
 
-		return this.#publisher;
+		return fetch(url, {
+			...options,
+			headers: {
+				authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+				accept: "application/vnd.github+json",
+				"user-agent": "@11ty/import",
+				...options.headers,
+			},
+		});
+	}
+
+	async getSha(filePath) {
+		let res = await this.githubRequest(filePath);
+		if(!res.ok) {
+			return;
+		}
+
+		let { sha } = await res.json();
+		return sha;
+	}
+
+	async publish(filePath, content, { message, sha, force } = {}) {
+		let res = await this.githubRequest(filePath, {
+			method: "PUT",
+			headers: {
+				"content-type": "application/json",
+			},
+			body: JSON.stringify({
+				message,
+				content: Buffer.from(content).toString("base64"),
+				sha,
+				branch: this.branch,
+			}),
+		});
+
+		// 422 when the file already exists and no `sha` was provided
+		if(res.status === 422 && force && !sha) {
+			let existingSha = await this.getSha(filePath);
+			if(existingSha) {
+				return this.publish(filePath, content, { message, sha: existingSha });
+			}
+		}
+
+		if(!res.ok) {
+			Logger.error(`GitHub persist error (${res.status}) for ${filePath}:`, await res.text());
+			return false;
+		}
+
+		let { content: { sha: createdSha } = {} } = await res.json();
+		return createdSha;
 	}
 
 	persistFile(filePath, content, metadata = {}) {
@@ -100,7 +153,7 @@ class Persist {
 			});
 		}
 
-		return this.publisher.publish(filePath, content, options);
+		return this.publish(filePath, content, options);
 	}
 }
 
