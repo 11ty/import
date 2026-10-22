@@ -1,4 +1,6 @@
 import { DateCompare } from "@11ty/eleventy-utils";
+import * as entities from "entities";
+import striptags from "striptags";
 
 import { DataSource } from "../DataSource.js";
 import { HostedWordPressApi } from "./HostedWordPressApi.js"
@@ -152,7 +154,8 @@ export class WordPressApi extends DataSource {
 				statusStr = `&status=${encodeURIComponent("publish,draft")}`;
 			}
 
-			return this.#getSubtypeUrl(this.#restBase, `?page=${pageNumber}&per_page=100${statusStr}${withinStr}`);
+			// Embeds featured media so self-hosted sites without Jetpack can return a featured image
+			return this.#getSubtypeUrl(this.#restBase, `?page=${pageNumber}&per_page=100&_embed=${encodeURIComponent("wp:featuredmedia")}${statusStr}${withinStr}`);
 		};
 	}
 
@@ -232,23 +235,42 @@ export class WordPressApi extends DataSource {
 		};
 	}
 
+	static getFeaturedImageUrl(rawEntry) {
+		let [embeddedMedia] = rawEntry._embedded?.["wp:featuredmedia"] || [];
+		return embeddedMedia?.source_url || rawEntry.jetpack_featured_media_url || rawEntry.yoast_head_json?.og_image?.[0]?.url;
+	}
+
+	// Prefers a Yoast meta description over the (often auto-generated) excerpt
+	static getDescription(rawEntry) {
+		let html = rawEntry.yoast_head_json?.description || rawEntry.yoast_head_json?.og_description || rawEntry.excerpt?.rendered;
+		if(!html) {
+			return;
+		}
+
+		return entities.decodeHTML(striptags(html)).replace(/\s+/g, " ").trim() || undefined;
+	}
+
 	// Supports: Title, Author, Published/Updated Dates
 	async cleanEntry(rawEntry, data) {
 		let url = this.getUrlFromEntry(rawEntry);
 		let status = this.cleanStatus(rawEntry.status)
 
 		let metadata = {};
-		if(rawEntry.jetpack_featured_media_url || rawEntry.og_image) {
-			let media = {};
-			if(rawEntry.og_image) {
-				media.opengraphImage = rawEntry.og_image?.url;
-			}
-			if(rawEntry.jetpack_featured_media_url) {
-				media.featuredImage = rawEntry.jetpack_featured_media_url;
+		let media = {};
+		let featuredImage = WordPressApi.getFeaturedImageUrl(rawEntry);
+		if(featuredImage) {
+			media.featuredImage = featuredImage;
 
-				// backwards compatibility (not downloaded or optimized)
-				metadata.featuredImage = rawEntry.jetpack_featured_media_url;
-			}
+			// backwards compatibility (not downloaded or optimized)
+			metadata.featuredImage = featuredImage;
+		}
+
+		let opengraphImage = rawEntry.yoast_head_json?.og_image?.[0]?.url || rawEntry.og_image?.url;
+		if(opengraphImage && opengraphImage !== featuredImage) {
+			media.opengraphImage = opengraphImage;
+		}
+
+		if(Object.keys(media).length > 0) {
 			metadata.media = media;
 		}
 
@@ -282,6 +304,11 @@ export class WordPressApi extends DataSource {
 			status,
 			metadata,
 		};
+
+		let description = WordPressApi.getDescription(rawEntry);
+		if(description) {
+			cleanEntry.description = description;
+		}
 
 		if(metadata.categories) {
 			// map WordPress categories for use in Eleventy tags (not WordPress metadata tags, which are different)

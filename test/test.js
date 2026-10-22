@@ -125,7 +125,7 @@ test("WordPress import", async (t) => {
 	assert.equal(entries.length, 1);
 
 	let [post] = entries;
-	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "dateUpdated", "filePath", "metadata", "outputContentType", "status", "title", "type", "url", "uuid"]);
+	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "dateUpdated", "description", "filePath", "metadata", "outputContentType", "status", "title", "type", "url", "uuid"]);
 
 	assert.equal(cleanContent(post.content), `We’re so close to launching version 6, and we figured it was high time to make an official announcement. So, save the date for February. Font Awesome 6 will go beyond pure icon-imagination!
 
@@ -167,11 +167,71 @@ We’ll keep fine-tuning that sweet, sweet recipe until February. Believe us; th
 
 	assert.equal(post.content.length, 1634);
 	assert.equal(post.authors[0].name, "Matt Johnson");
+	assert.equal(post.description, "We’re so close to launching version 6, and we figured it was high time to make an official announcement. So, save the date for February. Font Awesome 6 will go beyond pure icon-imagination! So, what’s new? More Icons Font Awesome 6 contains over 7,000 new icons, so you’re sure to find what you need for […]");
+	assert.equal(post.metadata.media.featuredImage, "https://i0.wp.com/blog.fontawesome.com/wp-content/uploads/2021/12/image-save-the-date.png?fit=1920%2C1080&ssl=1");
+	assert.equal(post.metadata.media.opengraphImage, "https://blog.fontawesome.com/wp-content/uploads/2021/12/image-save-the-date.png");
+});
+
+test("WordPress featured image and description without Jetpack, issue #11", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("wordpress", "https://blog.fontawesome.com/");
+
+	let [post] = require("./sources/blog-awesome-posts.json");
+	let { jetpack_featured_media_url, yoast_head_json, ...base } = post;
+
+	let embedded = {
+		...base,
+		_embedded: {
+			"wp:featuredmedia": [{ source_url: "https://blog.fontawesome.com/wp-content/uploads/embedded.png" }],
+		},
+		excerpt: { rendered: "<p>An <em>excerpt</em> &amp; more&hellip;</p>\n" },
+	};
+	let yoast = {
+		...base,
+		guid: { rendered: "https://blog.fontawesome.com/?p=2" },
+		link: "https://blog.fontawesome.com/yoast/",
+		yoast_head_json: {
+			description: "Yoast description",
+			og_image: [{ url: "https://blog.fontawesome.com/wp-content/uploads/yoast.png" }],
+		},
+	};
+	let bare = {
+		...base,
+		guid: { rendered: "https://blog.fontawesome.com/?p=3" },
+		link: "https://blog.fontawesome.com/bare/",
+		excerpt: { rendered: "" },
+	};
+
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 1), [embedded, yoast, bare]);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 2), []);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("pages", 1), []);
+	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/categories/1", require("./sources/blog-awesome-categories.json"));
+	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/users/155431370", require("./sources/blog-awesome-author.json"));
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.equal(entries.length, 3);
+
+	assert.equal(entries[0].metadata.media.featuredImage, "https://blog.fontawesome.com/wp-content/uploads/embedded.png");
+	assert.equal(entries[0].metadata.featuredImage, "https://blog.fontawesome.com/wp-content/uploads/embedded.png");
+	assert.equal(entries[0].description, "An excerpt & more…");
+
+	assert.deepEqual(entries[1].metadata.media, { featuredImage: "https://blog.fontawesome.com/wp-content/uploads/yoast.png" });
+	assert.equal(entries[1].description, "Yoast description");
+
+	assert.equal(entries[2].metadata.media, undefined);
+	assert.equal(entries[2].description, undefined);
+
+	assert.match(Importer.convertEntryToYaml(entries[1]), /^description: Yoast description$/m);
 });
 
 function getWordPressPagedUrl(restBase, pageNumber) {
 	let status = process.env.WORDPRESS_USERNAME ? "&status=publish%2Cdraft" : "";
-	return `https://blog.fontawesome.com/wp-json/wp/v2/${restBase}/?page=${pageNumber}&per_page=100${status}`;
+	return `https://blog.fontawesome.com/wp-json/wp/v2/${restBase}/?page=${pageNumber}&per_page=100&_embed=wp%3Afeaturedmedia${status}`;
 }
 
 test("WordPress pages and custom post types, issue #17", async (t) => {

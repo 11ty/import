@@ -481,6 +481,9 @@ class Importer {
 	static convertEntryToYaml(entry) {
 		let data = {};
 		data.title = entry.title;
+		if(entry.description) {
+			data.description = entry.description;
+		}
 		data.authors = entry.authors;
 		data.date = entry.date;
 		data.metadata = entry.metadata || {};
