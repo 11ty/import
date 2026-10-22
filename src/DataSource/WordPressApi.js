@@ -1,8 +1,16 @@
-import "dotenv/config"
 import { DateCompare } from "@11ty/eleventy-utils";
 
 import { DataSource } from "../DataSource.js";
 import { HostedWordPressApi } from "./HostedWordPressApi.js"
+
+// Load WORDPRESS_USERNAME and WORDPRESS_PASSWORD from an optional .env file
+try {
+	process.loadEnvFile();
+} catch(e) {
+	if(e.code !== "ENOENT") {
+		throw e;
+	}
+}
 
 export class WordPressApi extends DataSource {
 	static TYPE = "wordpress";
