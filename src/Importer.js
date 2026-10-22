@@ -31,6 +31,7 @@ import { DevTo } from "./DataSource/DevTo.js";
 import { MediumExport } from "./DataSource/MediumExport.js";
 import { WaybackMachine } from "./DataSource/WaybackMachine.js";
 import { Linktree } from "./DataSource/Linktree.js";
+import { Webmentions } from "./DataSource/Webmentions.js";
 
 import pkg from "../package.json" with { type: "json" };
 
@@ -59,6 +60,10 @@ class Importer {
 	#draftsFolder = "drafts";
 	#outputFolder = ".";
 	#assetReferenceType;
+	#avatarReferenceType;
+	#dataFiles = new Map();
+	// Entries with all of their comments (none failed), so their data file items are replaced
+	#completeComments = new WeakSet();
 	#documentErrors = 0;
 
 	constructor() {
@@ -143,8 +148,7 @@ class Importer {
 
 		for(let source of this.sources) {
 			source.setVerbose(isVerbose);
-		}
-	}
+		}	}
 
 	setAssetsFolder(folder) {
 		this.fetcher.setAssetsFolder(folder);
@@ -175,6 +179,23 @@ class Importer {
 		}
 
 		this.#assetReferenceType = refType;
+	}
+
+	static REFERENCE_TYPES = ["relative", "colocate", "absolute", "disabled"];
+
+	// Keys in a post’s data file (e.g. `my-post.json`), filled by sources
+	static DATA_KEYS = ["comments", "likes", "reposts", "bookmarks", "rsvps"];
+
+	// Avatars are shared across posts, so default to the root assets folder (or disabled with assets)
+	setAvatarReferenceType(refType) {
+		if(!Importer.REFERENCE_TYPES.includes(refType)) {
+			throw new Error(`Invalid value for --avatarrefs, must be one of: ${Importer.REFERENCE_TYPES.join(", ")}. Received: ${refType} (${typeof refType})`);
+		}
+		this.#avatarReferenceType = refType;
+	}
+
+	getAvatarReferenceType() {
+		return this.#avatarReferenceType ?? (this.shouldDownloadAssets() ? "absolute" : "disabled");
 	}
 
 	setDraftsFolder(dir) {
@@ -241,6 +262,8 @@ class Importer {
 				cls = WaybackMachine;
 			} else if(type === "linktree") {
 				cls = Linktree;
+			} else if(type === "webmention" || type === "webmentions") {
+				cls = Webmentions;
 			}
 		} else if(typeof type === "function") {
 			cls = type;
@@ -392,7 +415,7 @@ class Importer {
 
 			let transformed = { ...author };
 			if(author.avatarUrl) {
-				transformed.avatarUrl = await this.fetcher.fetchAsset(author.avatarUrl, cleanEntry);
+				transformed.avatarUrl = await this.fetcher.fetchAsset(author.avatarUrl, cleanEntry, this.getAvatarReferenceType());
 				this.#keepAsset(transformed.avatarUrl, cleanEntry);
 			}
 
@@ -417,30 +440,62 @@ class Importer {
 			}
 		}
 
-		await Promise.all(Array.from(entriesBySource).map(([source, sourceEntries]) => source.addComments(sourceEntries)));
+		await Promise.all(Array.from(entriesBySource).map(async ([source, sourceEntries]) => {
+			source.resetCommentErrors();
+			await source.addComments(sourceEntries);
+			// Failed requests without entries affect all of the source’s entries
+			if(source.hasUnattributedCommentErrors()) {
+				source.setCommentsIncomplete(sourceEntries);
+			}
+		}));
 
 		for(let entry of entries) {
-			if(Array.isArray(entry.comments) && entry.comments.length === 0) {
-				delete entry.comments;
+			if(entry.source?.shouldIncludeComments() && !DataSource.hasIncompleteComments(entry)) {
+				this.#completeComments.add(entry);
+			}
+		}
+
+		for(let entry of entries) {
+			for(let key of Importer.DATA_KEYS) {
+				if(Array.isArray(entry[key]) && entry[key].length === 0) {
+					delete entry[key];
+				}
 			}
 		}
 	}
 
+	async #fetchAvatar(author, entry) {
+		if(!author?.avatarUrl) {
+			return author;
+		}
+		let avatarUrl = await this.fetcher.fetchAsset(author.avatarUrl, entry, this.getAvatarReferenceType());
+		this.#keepAsset(avatarUrl, entry);
+		return { ...author, avatarUrl };
+	}
+
+	// `COMMENT_ASSETS` downloads content assets and avatars, `COMMENT_AVATARS` downloads avatars only
 	async transformComments(entry) {
-		if(!entry.source?.constructor.COMMENT_ASSETS || !Array.isArray(entry.comments)) {
+		let { COMMENT_ASSETS, COMMENT_AVATARS } = entry.source?.constructor || {};
+		if(!COMMENT_ASSETS && !COMMENT_AVATARS) {
 			return;
 		}
 
-		entry.comments = await Promise.all(entry.comments.map(async comment => {
-			let transformed = { ...comment };
-			if(comment.content) {
-				transformed.content = await this.htmlTransformer.transform(comment.content, entry);
+		for(let key of Importer.DATA_KEYS) {
+			if(!Array.isArray(entry[key])) {
+				continue;
 			}
-			if(comment.author?.avatarUrl) {
-				transformed.author = { ...comment.author, avatarUrl: await this.fetcher.fetchAsset(comment.author.avatarUrl, entry) };
-			}
-			return transformed;
-		}));
+
+			entry[key] = await Promise.all(entry[key].map(async item => {
+				let transformed = { ...item };
+				if(item.content && COMMENT_ASSETS) {
+					transformed.content = await this.htmlTransformer.transform(item.content, entry);
+				}
+				if(item.author) {
+					transformed.author = await this.#fetchAvatar(item.author, entry);
+				}
+				return transformed;
+			}));
+		}
 	}
 
 	async getTransformedContent(entry, isWritingToMarkdown) {
@@ -474,10 +529,19 @@ class Importer {
 	}
 
 
+	// Data files are always rewritten
+	static isDataOnly(entry) {
+		return Boolean(entry.source?.constructor.DATA_ONLY);
+	}
+
 	// Is used to filter getEntries and in toFiles (which also checks conflicts)
 	shouldSkipEntry(entry) {
 		if(entry.filePath === false) {
 			return true;
+		}
+
+		if(Importer.isDataOnly(entry)) {
+			return false;
 		}
 
 		// File system operations
@@ -540,7 +604,9 @@ class Importer {
 			await this.fetchRelatedMedia(entry);
 			await this.transformAuthors(entry);
 
-			if(entry.source?.shouldIncludeContent() === false) {
+			if(Importer.isDataOnly(entry)) {
+				await this.transformComments(entry);
+			} else if(entry.source?.shouldIncludeContent() === false) {
 				entry.content = "";
 			} else {
 				await this.transformComments(entry);
@@ -676,8 +742,68 @@ class Importer {
 		return filePath.replace(/\.[^./]+$/, "") + ".json";
 	}
 
-	static convertCommentsToJson(entry) {
-		return JSON.stringify({ comments: entry.comments }, null, "\t");
+	static hasData(entry) {
+		return Importer.DATA_KEYS.some(key => Array.isArray(entry[key]));
+	}
+
+	// Merges into an existing data file: each item has a `via` (source type) and a source only replaces its own items
+	// Items without `via` (earlier imports) belong to post sources, duplicate URLs from data only sources are dropped
+	// With `replace: false` (incomplete comments) existing items are kept and items with the same `id` are updated
+	static convertCommentsToJson(entry, existingData = {}, { replace = true } = {}) {
+		let via = entry.source?.constructor.TYPE;
+		let isDataOnly = Importer.isDataOnly(entry);
+		let isOwn = item => item?.via === via || (!item?.via && !isDataOnly);
+		let byDate = (a, b) => new Date(a.date) - new Date(b.date);
+
+		let data = { ...existingData };
+		for(let key of Importer.DATA_KEYS) {
+			let existingItems = Array.isArray(existingData[key]) ? existingData[key] : [];
+			let others = existingItems.filter(item => !isOwn(item));
+			let own = (entry[key] || []).map(item => ({ ...item, via }));
+			if(!replace) {
+				let ids = new Set(own.map(item => item.id));
+				own = [...existingItems.filter(item => isOwn(item) && !ids.has(item.id)), ...own];
+			}
+
+			let otherUrls = new Set(others.map(item => item.url).filter(Boolean));
+			let ownUrls = new Set(own.map(item => item.url).filter(Boolean));
+			if(isDataOnly) {
+				own = own.filter(item => !otherUrls.has(item.url));
+			} else {
+				others = others.filter(item => !ownUrls.has(item.url));
+			}
+
+			let items = [...others, ...own].sort(byDate);
+			if(items.length) {
+				data[key] = items;
+			} else {
+				delete data[key];
+			}
+		}
+
+		// Empty an existing file instead of leaving stale items
+		if(Object.keys(data).length === 0) {
+			return Object.keys(existingData).length ? "{}" : undefined;
+		}
+
+		return JSON.stringify(data, null, "\t");
+	}
+
+	// Contents written earlier in this run (also for --dryrun) take precedence over the file system
+	#readDataFile(pathname) {
+		let raw = this.#dataFiles.get(pathname);
+		if(raw === undefined && fs.existsSync(pathname)) {
+			raw = fs.readFileSync(pathname, "utf8");
+		}
+		if(raw === undefined) {
+			return {};
+		}
+
+		try {
+			return { raw, data: JSON.parse(raw) };
+		} catch(e) {
+			throw new Error(`Could not parse existing data file ${pathname}: ${e.message}`);
+		}
 	}
 
 	// TODO options.pathPrefix
@@ -690,42 +816,53 @@ class Importer {
 				continue;
 			}
 
-			if(filepathConflicts[pathname]) {
-				throw new Error(`Multiple entries attempted to write to the same place: ${pathname} (originally via ${filepathConflicts[pathname]})`);
+			// Data only entries share data files with posts
+			let isDataOnly = Importer.isDataOnly(entry);
+			let conflictKey = `${isDataOnly ? "data" : "post"}:${pathname}`;
+			if(filepathConflicts[conflictKey]) {
+				throw new Error(`Multiple entries attempted to write to the same place: ${pathname} (originally via ${filepathConflicts[conflictKey]})`);
 			}
-			filepathConflicts[pathname] = entry.url || true;
+			filepathConflicts[conflictKey] = entry.url || true;
 
-			let frontMatter = Importer.convertEntryToYaml(entry);
-			let content = `---
+			let files = [];
+			if(!isDataOnly) {
+				let frontMatter = Importer.convertEntryToYaml(entry);
+				let content = `---
 ${frontMatter}---
 ${entry.content}`;
 
-			if(this.shouldSkipEntry(entry)) {
-				if(this.isVerbose) {
-					Logger.skipping("post", pathname, entry.url);
+				if(this.shouldSkipEntry(entry)) {
+					if(this.isVerbose) {
+						Logger.skipping("post", pathname, entry.url);
+					}
+					continue;
 				}
-				continue;
+
+				if(this.isVerbose) {
+					Logger.importing("post", pathname, entry.url, {
+						size: content.length,
+						dryRun: this.dryRun
+					});
+				}
+
+				if(!this.dryRun) {
+					this.counts.files++;
+
+					this.directoryManager.createDirectoryForPath(pathname);
+
+					fs.writeFileSync(pathname, content, { encoding: "utf8" });
+				}
+
+				files.push({ pathname, content, type: "post" });
 			}
 
-			if(this.isVerbose) {
-				Logger.importing("post", pathname, entry.url, {
-					size: content.length,
-					dryRun: this.dryRun
-				});
-			}
-
-			if(!this.dryRun) {
-				this.counts.files++;
-
-				this.directoryManager.createDirectoryForPath(pathname);
-
-				fs.writeFileSync(pathname, content, { encoding: "utf8" });
-			}
-
-			let files = [{ pathname, content, type: "post" }];
-			if(entry.comments?.length) {
-				let commentsPathname = Importer.getCommentsFilePath(pathname);
-				let commentsContent = Importer.convertCommentsToJson(entry);
+			// Data only sources and complete comments replace their items, incomplete comments are merged
+			let replace = isDataOnly || this.#completeComments.has(entry);
+			let commentsPathname = Importer.getCommentsFilePath(pathname);
+			let existing = (replace || Importer.hasData(entry)) ? this.#readDataFile(commentsPathname) : undefined;
+			let commentsContent = existing && Importer.convertCommentsToJson(entry, existing.data, { replace });
+			if(commentsContent !== undefined && commentsContent !== existing.raw) {
+				this.#dataFiles.set(commentsPathname, commentsContent);
 				files.push({ pathname: commentsPathname, content: commentsContent, type: "comments" });
 
 				if(this.isVerbose) {
@@ -736,6 +873,7 @@ ${entry.content}`;
 				}
 
 				if(!this.dryRun) {
+					this.directoryManager.createDirectoryForPath(commentsPathname);
 					fs.writeFileSync(commentsPathname, commentsContent, { encoding: "utf8" });
 				}
 			}

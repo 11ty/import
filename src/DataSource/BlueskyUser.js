@@ -87,10 +87,12 @@ export class BlueskyUser extends Rss {
 		await Promise.all(entries.map(async entry => {
 			let uri = BlueskyUser.getAtUri(entry);
 			if(!uri) {
+				// Nothing to request, existing comments are kept
+				this.setCommentsIncomplete([entry]);
 				return;
 			}
 
-			let data = await this.getOptionalData(`${BlueskyUser.API}app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=${BlueskyUser.THREAD_DEPTH}&parentHeight=0`, "json");
+			let data = await this.getOptionalData(`${BlueskyUser.API}app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=${BlueskyUser.THREAD_DEPTH}&parentHeight=0`, "json", [entry]);
 			entry.comments = DataSource.sortComments(BlueskyUser.getReplies(data?.thread, uri));
 		}));
 	}

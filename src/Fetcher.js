@@ -136,11 +136,12 @@ class Fetcher {
 		this.#persistManager = manager;
 	}
 
-	getAssetLocation(assetUrl, assetContentType, contextEntry) {
+	// `refType` overrides the asset reference type: relative, colocate, absolute, or disabled (e.g. for avatars)
+	getAssetLocation(assetUrl, assetContentType, contextEntry, refType) {
 		let filename = Fetcher.getFilenameFromSrc(assetUrl, assetContentType);
-		let assetUrlLocation = Utils.pathJoin(this.#assetsFolder, filename);
+		let assetUrlLocation = Utils.pathJoin(refType === "colocate" ? "" : this.#assetsFolder, filename);
 		// root /assets folder
-		if(!this.useRelativeAssets) {
+		if(refType ? refType === "absolute" : !this.useRelativeAssets) {
 			return {
 				url: `/${assetUrlLocation}`,
 				filePath: Utils.pathJoin(this.#outputFolder, assetUrlLocation),
@@ -162,8 +163,8 @@ class Fetcher {
 		}
 	}
 
-	async fetchAsset(assetUrl, contextEntry) {
-		if(!this.#downloadAssets) {
+	async fetchAsset(assetUrl, contextEntry, refType) {
+		if(refType ? refType === "disabled" : !this.#downloadAssets) {
 			return assetUrl;
 		}
 
@@ -188,7 +189,7 @@ class Fetcher {
 		}).then(result => ({ body: result.body, contentType: result.headers?.["content-type"] }));
 
 		return request.then(result => {
-			let { url: urlValue, filePath: fullOutputLocation } = this.getAssetLocation(assetUrl, result.contentType, contextEntry);
+			let { url: urlValue, filePath: fullOutputLocation } = this.getAssetLocation(assetUrl, result.contentType, contextEntry, refType);
 
 			if(this.writtenAssetFiles.has(fullOutputLocation)) {
 				return urlValue;
@@ -243,7 +244,7 @@ class Fetcher {
 	}
 
 	async fetch(url, options = {}, verbosity = {}) {
-		let { verbose, showErrors } = Object.assign({
+		let { verbose, showErrors, logUrl = url } = Object.assign({
 			verbose: true, // whether to log the initial fetch request
 			showErrors: true, // whether to show if a request has an error.
 		}, verbosity);
@@ -271,7 +272,7 @@ class Fetcher {
 				logAdds.push(kleur.green(`(${opts.duration} cache)`));
 			}
 
-			Logger.log(kleur.gray("Fetching"), url, logAdds.join(" ") );
+			Logger.log(kleur.gray("Fetching"), logUrl, logAdds.join(" ") );
 		}
 
 		this.fetchedUrls.add(url);
@@ -287,7 +288,7 @@ class Fetcher {
 				this.errors.add(url);
 
 				if(this.isVerbose && showErrors) {
-					Logger.log(kleur.red(`Error fetching`), url, kleur.red(error.message));
+					Logger.log(kleur.red(`Error fetching`), logUrl, kleur.red(error.message.split(url).join(logUrl)));
 				}
 			}
 

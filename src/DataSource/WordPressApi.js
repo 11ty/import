@@ -189,11 +189,16 @@ export class WordPressApi extends DataSource {
 		let entriesById = new Map(entries.filter(entry => entry.metadata?.id).map(entry => [entry.metadata.id, entry]));
 		let ids = Array.from(entriesById.keys());
 
+		// Nothing to request, existing comments are kept
+		this.setCommentsIncomplete(entries.filter(entry => !entry.metadata?.id));
+
 		for(let i = 0; i < ids.length; i += WordPressApi.PER_PAGE) {
 			let postIds = ids.slice(i, i + WordPressApi.PER_PAGE);
+			// A failed batch only affects its own entries
+			let batchEntries = postIds.map(id => entriesById.get(id));
 
 			for(let pageNumber = 1; ; pageNumber++) {
-				let comments = await this.getOptionalData(this.#getCommentsUrl(postIds, pageNumber));
+				let comments = await this.getOptionalData(this.#getCommentsUrl(postIds, pageNumber), this.getType(), batchEntries);
 				if(!Array.isArray(comments)) {
 					break;
 				}

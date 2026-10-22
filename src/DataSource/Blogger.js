@@ -123,12 +123,14 @@ export class Blogger extends DataSource {
 		await Promise.all(entries.map(async entry => {
 			let url = this.#commentFeeds.get(entry.uuid);
 			if(!url) {
+				// Nothing to request, existing comments are kept
+				this.setCommentsIncomplete([entry]);
 				return;
 			}
 
 			let comments = [];
 			for(let startIndex = 1; ; ) {
-				let data = await this.getOptionalData(`${url}?alt=json&max-results=${Blogger.PER_PAGE}&start-index=${startIndex}`, "json");
+				let data = await this.getOptionalData(`${url}?alt=json&max-results=${Blogger.PER_PAGE}&start-index=${startIndex}`, "json", [entry]);
 				let page = data?.feed?.entry || [];
 				comments.push(...page);
 				startIndex += page.length;

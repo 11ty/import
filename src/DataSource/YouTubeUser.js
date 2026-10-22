@@ -111,11 +111,11 @@ export class YouTubeUser extends DataSource {
 		});
 	}
 
-	async #getPaged(route, query) {
+	async #getPaged(route, query, entry) {
 		let items = [];
 		let pageToken = "";
 		do {
-			let data = await this.getOptionalData(`${YouTubeUser.API}${route}?${query}&maxResults=100&textFormat=html${pageToken ? `&pageToken=${pageToken}` : ""}`, "json");
+			let data = await this.getOptionalData(`${YouTubeUser.API}${route}?${query}&maxResults=100&textFormat=html${pageToken ? `&pageToken=${pageToken}` : ""}`, "json", [entry]);
 			items.push(...(data?.items || []));
 			pageToken = data?.nextPageToken;
 		} while(pageToken);
@@ -123,9 +123,9 @@ export class YouTubeUser extends DataSource {
 		return items;
 	}
 
-	async #getComments(videoId) {
+	async #getComments(videoId, entry) {
 		let comments = [];
-		for(let thread of await this.#getPaged("commentThreads", `part=${encodeURIComponent("snippet,replies")}&videoId=${videoId}`)) {
+		for(let thread of await this.#getPaged("commentThreads", `part=${encodeURIComponent("snippet,replies")}&videoId=${videoId}`, entry)) {
 			let { topLevelComment, totalReplyCount = 0 } = thread.snippet || {};
 			if(!topLevelComment) {
 				continue;
@@ -135,7 +135,7 @@ export class YouTubeUser extends DataSource {
 			// Threads only include a few replies
 			let replies = thread.replies?.comments || [];
 			if(replies.length < totalReplyCount) {
-				replies = await this.#getPaged("comments", `part=snippet&parentId=${topLevelComment.id}`);
+				replies = await this.#getPaged("comments", `part=snippet&parentId=${topLevelComment.id}`, entry);
 			}
 			comments.push(...replies.map(reply => YouTubeUser.cleanComment(reply, videoId)));
 		}
@@ -144,14 +144,18 @@ export class YouTubeUser extends DataSource {
 	}
 
 	async addComments(entries) {
+		// Comments can’t be requested, existing comments are kept
 		if(!process.env.YOUTUBE_API_KEY) {
+			this.setCommentsIncomplete(entries);
 			return;
 		}
 
 		await Promise.all(entries.map(async entry => {
 			let videoId = new URL(entry.url).searchParams.get("v");
 			if(videoId) {
-				entry.comments = await this.#getComments(videoId);
+				entry.comments = await this.#getComments(videoId, entry);
+			} else {
+				this.setCommentsIncomplete([entry]);
 			}
 		}));
 	}

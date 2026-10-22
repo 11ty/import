@@ -63,6 +63,9 @@ let { positionals, values } = parseArgs({
 			type: "string",
 			default: "relative",
 		},
+		avatarrefs: {
+			type: "string",
+		},
 		within: {
 			type: "string",
 			default: "",
@@ -74,12 +77,12 @@ let { positionals, values } = parseArgs({
 		posttypes: {
 			type: "string",
 			default: "",
-		}
+		},
 	},
 });
 
 let [ type, target ] = positionals;
-let { quiet, dryrun, output, help, version, overwrite, cacheduration, format, persist, assetrefs, within, preserve, posttypes } = values;
+let { quiet, dryrun, output, help, version, overwrite, cacheduration, format, persist, assetrefs, avatarrefs, within, preserve, posttypes } = values;
 
 if(version) {
 	const require = createRequire(import.meta.url);
@@ -125,9 +128,15 @@ if(help) {
   npx @11ty/import [type] [target] --assetrefs=colocate
   npx @11ty/import [type] [target] --assetrefs=disabled
 
+  # Change avatar reference URLs: absolute (default), relative, colocate, disabled (default when --assetrefs=disabled)
+  npx @11ty/import [type] [target] --avatarrefs=relative
+
   # WordPress post types to import (default: posts,pages)
   npx @11ty/import wordpress [target] --posttypes=posts,pages,product
   npx @11ty/import wordpressxml [file] --posttypes=posts,pages,product
+
+  # Import webmention.io webmentions into post data files (requires WEBMENTION_IO_TOKEN)
+  npx @11ty/import webmentions example.com
 `);
 
 	process.exit();
@@ -149,12 +158,20 @@ importer.setCacheDuration(cacheduration);
 importer.setVerbose(!quiet);
 importer.setSafeMode(!overwrite);
 importer.setDryRun(dryrun);
-importer.addSource(type, posttypes ? { url: target, postTypes: posttypes } : target);
+try {
+	importer.addSource(type, posttypes ? { url: target, postTypes: posttypes } : target);
+} catch(e) {
+	console.error(e.message);
+	process.exit(1);
+}
 
 // TODO wire these up to CLI
 importer.setDraftsFolder("drafts");
 importer.setAssetsFolder("assets");
 importer.setAssetReferenceType(assetrefs);
+if(avatarrefs) {
+	importer.setAvatarReferenceType(avatarrefs);
+}
 
 // CSS selectors to preserve on markdown conversion
 if(preserve) {

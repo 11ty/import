@@ -155,10 +155,12 @@ export class FediverseUser extends DataSource {
 		await Promise.all(entries.map(async entry => {
 			let { postId } = FediverseUser.parseFromUrl(entry.url);
 			if(!postId) {
+				// Nothing to request, existing comments are kept
+				this.setCommentsIncomplete([entry]);
 				return;
 			}
 
-			let data = await this.getOptionalData(`https://${this.hostname}/api/v1/statuses/${postId}/context`, "json");
+			let data = await this.getOptionalData(`https://${this.hostname}/api/v1/statuses/${postId}/context`, "json", [entry]);
 			entry.comments = DataSource.sortComments((data?.descendants || []).map(status => FediverseUser.cleanComment(status, postId)));
 		}));
 	}

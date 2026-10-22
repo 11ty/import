@@ -12,8 +12,13 @@ class DataSource {
 	// Downloads assets in comment content and avatars (e.g. your own media in a thread)
 	static COMMENT_ASSETS = false;
 
+	// Entries with unknown or partial comments (failed requests or nothing to request)
+	static #incompleteComments = new WeakSet();
+
 	#fetcher;
 	#includeComments = true;
+	// Failed comment requests without entries affect all of them
+	#hasUnattributedCommentErrors = false;
 	#includeContent = true;
 	#fetchDataOverrides = {};
 	#outputFolder = ".";
@@ -64,13 +69,41 @@ class DataSource {
 		return this.#includeContent;
 	}
 
+	// Existing comments are kept (not replaced) for these entries
+	setCommentsIncomplete(entries) {
+		for(let entry of entries) {
+			DataSource.#incompleteComments.add(entry);
+		}
+	}
+
+	static hasIncompleteComments(entry) {
+		return DataSource.#incompleteComments.has(entry);
+	}
+
+	resetCommentErrors() {
+		this.#hasUnattributedCommentErrors = false;
+	}
+
+	hasUnattributedCommentErrors() {
+		return this.#hasUnattributedCommentErrors;
+	}
+
 	// Comments are optional, so failed requests are logged and skipped
-	async getOptionalData(url, type = this.getType?.()) {
+	// `entries` are the entries the request is for (their comments are incomplete if it fails)
+	async getOptionalData(url, type = this.getType?.(), entries) {
 		try {
 			return await this.getData(url, type, false);
 		} catch(e) {
-			if(this.isVerbose && await this.isErrorWorthWorryingAbout(e)) {
-				Logger.error(`Error fetching comments from ${url}: ${e.message}`);
+			// Paging errors that just mean there are no more pages don’t count
+			if(await this.isErrorWorthWorryingAbout(e)) {
+				if(entries) {
+					this.setCommentsIncomplete(entries);
+				} else {
+					this.#hasUnattributedCommentErrors = true;
+				}
+				if(this.isVerbose) {
+					Logger.error(`Error fetching comments from ${this.getLogUrl(url)}: ${e.message}`);
+				}
 			}
 			this.#fetcher?.clearError(url);
 		}
@@ -175,6 +208,11 @@ class DataSource {
 		return new Intl.DateTimeFormat(locale, options).format(date)
 	}
 
+	// Request URL as shown in logs (e.g. without secrets)
+	getLogUrl(url) {
+		return url;
+	}
+
 	// Receives the request URL
 	getHeaders(url) {
 		return {};
@@ -227,7 +265,8 @@ class DataSource {
 			},
 		}, {
 			verbose: true,
-			showErrors
+			showErrors,
+			logUrl: this.getLogUrl(url),
 		});
 	}
 
@@ -311,6 +350,11 @@ class DataSource {
 			}
 		}
 
+		return this.finalizeEntries(entries);
+	}
+
+	// Shared post-processing for cleaned entries (for sources that override `getEntries`)
+	finalizeEntries(entries) {
 		// Feeds can list the same entry more than once (e.g. a Bluesky self-repost), keep the first
 		let seen = new Set();
 		entries = entries.filter(entry => {

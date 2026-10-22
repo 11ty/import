@@ -102,7 +102,7 @@ export class Substack extends DataSource {
 		await Promise.all(entries.map(async entry => {
 			let id = entry.metadata?.id;
 			if(this.#commentCounts.get(id) > 0) {
-				let data = await this.getOptionalData(`${this.getSiteUrl()}/api/v1/post/${id}/comments?all_comments=true&sort=oldest_first`, "json");
+				let data = await this.getOptionalData(`${this.getSiteUrl()}/api/v1/post/${id}/comments?all_comments=true&sort=oldest_first`, "json", [entry]);
 				entry.comments = DataSource.sortComments(Substack.getComments(data?.comments, entry.url));
 			}
 		}));

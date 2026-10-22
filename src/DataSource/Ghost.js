@@ -115,10 +115,10 @@ export class Ghost extends DataSource {
 		});
 	}
 
-	async #getPagedComments(url) {
+	async #getPagedComments(url, entry) {
 		let comments = [];
 		for(let pageNumber = 1; ; pageNumber++) {
-			let data = await this.getOptionalData(`${url}?limit=${Ghost.PER_PAGE}&page=${pageNumber}&order=${encodeURIComponent("created_at asc")}`, "json");
+			let data = await this.getOptionalData(`${url}?limit=${Ghost.PER_PAGE}&page=${pageNumber}&order=${encodeURIComponent("created_at asc")}`, "json", [entry]);
 			comments.push(...(data?.comments || []));
 			if(!data?.meta?.pagination?.next) {
 				return comments;
@@ -127,14 +127,14 @@ export class Ghost extends DataSource {
 	}
 
 	// Native comments from the members API, threads only include a few replies
-	async #getComments(id) {
+	async #getComments(id, entry) {
 		let comments = [];
-		for(let comment of await this.#getPagedComments(`${this.getSiteUrl()}/members/api/comments/post/${id}/`)) {
+		for(let comment of await this.#getPagedComments(`${this.getSiteUrl()}/members/api/comments/post/${id}/`, entry)) {
 			comments.push(comment);
 
 			let replies = comment.replies || [];
 			if(replies.length < (comment.count?.replies || 0)) {
-				replies = await this.#getPagedComments(`${this.getSiteUrl()}/members/api/comments/${comment.id}/replies/`);
+				replies = await this.#getPagedComments(`${this.getSiteUrl()}/members/api/comments/${comment.id}/replies/`, entry);
 			}
 			comments.push(...replies);
 		}
@@ -147,13 +147,13 @@ export class Ghost extends DataSource {
 		let counts = {};
 		for(let j = 0; j < ids.length; j += Ghost.COMMENT_COUNTS_BATCH_SIZE) {
 			let batch = ids.slice(j, j + Ghost.COMMENT_COUNTS_BATCH_SIZE);
-			Object.assign(counts, await this.getOptionalData(`${this.getSiteUrl()}/members/api/comments/counts/?ids=${batch.join(",")}`, "json"));
+			Object.assign(counts, await this.getOptionalData(`${this.getSiteUrl()}/members/api/comments/counts/?ids=${batch.join(",")}`, "json", entries.filter(entry => batch.includes(entry.metadata?.id))));
 		}
 
 		await Promise.all(entries.map(async entry => {
 			let id = entry.metadata?.id;
 			if(counts[id] > 0) {
-				entry.comments = await this.#getComments(id);
+				entry.comments = await this.#getComments(id, entry);
 			}
 		}));
 	}

@@ -70,7 +70,7 @@ export class DevTo extends DataSource {
 		await Promise.all(entries.map(async entry => {
 			let id = entry.metadata?.id;
 			if(this.#commentCounts.get(id) > 0) {
-				let comments = await this.getOptionalData(`${DevTo.API}comments?a_id=${id}`, "json");
+				let comments = await this.getOptionalData(`${DevTo.API}comments?a_id=${id}`, "json", [entry]);
 				entry.comments = DataSource.sortComments(DevTo.getComments(comments));
 			}
 		}));

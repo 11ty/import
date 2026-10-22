@@ -62,8 +62,15 @@ npx @11ty/import [type] [target] --assetrefs=colocate
 # Don’t download any assets
 npx @11ty/import [type] [target] --assetrefs=disabled
 
+# Change avatar reference URLs, same values as --assetrefs (default: absolute, or disabled with --assetrefs=disabled)
+# Avatars are shared across posts, so the default is one root assets folder
+npx @11ty/import [type] [target] --avatarrefs=relative
+
 # WordPress post types to import (default: posts,pages)
 npx @11ty/import wordpress [target] --posttypes=posts,pages,product
+
+# Import webmention.io webmentions into post data files (requires WEBMENTION_IO_TOKEN)
+npx @11ty/import webmentions example.com
 
 # EXPERIMENTAL: Persist *new* non-draft content
 # - `github` persist type requires a `GITHUB_TOKEN` environment variable.
@@ -177,6 +184,7 @@ npx @11ty/import bluesky @11ty.dev
 - `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
 - `twitter` (Twitter/X archive `.zip` file or extracted folder path)
 - `wayback` (site URL or domain, optionally with a path, from the Internet Archive’s Wayback Machine)
+- `webmentions` (domain or site URL, data files only, see [Webmentions](#webmentions))
 
 ```sh
 # Import all posts (paid posts are previews unless a subscriber’s `substack.sid` cookie value is supplied in a SUBSTACK_SID environment variable)
@@ -215,7 +223,13 @@ npx @11ty/import wayback https://web.archive.org/web/2022/https://example.com/
 
 ### Comments
 
-Comments are imported by default to a [template data file](https://www.11ty.dev/docs/data-template-dir/) next to each post (e.g. `my-post.md` and `my-post.json`) with a `comments` array. Each comment has `id`, `parentId` (`0` for top-level), `url`, `author` (`name`, `url`, `avatarUrl`), `date`, and HTML `content`.
+Comments are imported by default to a [template data file](https://www.11ty.dev/docs/data-template-dir/) next to each post (e.g. `my-post.md` and `my-post.json`) with a `comments` array. Each comment has `id`, `parentId` (`0` for top-level), `url`, `author` (`name`, `url`, `avatarUrl`), `date`, HTML `content`, and `via` (the source type).
+
+The data file can also have `likes`, `reposts`, `bookmarks`, and `rsvps` arrays, each item with `id`, `url`, `author`, `date`, and `via` (RSVPs also have `rsvp`: `yes`, `no`, `maybe`, or `interested`).
+
+Sources share the data file: a source only replaces its own items (matching `via`) and other keys are kept. Items are sorted by date.
+
+Comments deleted upstream are removed when a post is reimported (`--overwrite`). If a comment request fails, existing comments are kept and fetched ones are updated.
 
 Comments with content warnings or from authors that opted out of wider distribution have `private: true` and only `id`, `parentId`, `url`, and `date` (link to them instead).
 
@@ -232,6 +246,20 @@ Comments with content warnings or from authors that opted out of wider distribut
 - `rss`, `atom`: per-post comment feeds (`wfw:commentRss` or `<link rel="replies">`), when available
 
 Skip comments with `importer.addSource(type, { url, comments: false })`.
+
+#### Webmentions
+
+Import [webmention.io](https://webmention.io/) webmentions for a domain into the data file of each mentioned URL (protocol, `www.`, and trailing slashes are ignored), whether or not the post was imported. Requires a `WEBMENTION_IO_TOKEN` environment variable ([API token](https://webmention.io/settings)).
+
+```sh
+npx @11ty/import webmentions example.com
+```
+
+- Replies and mentions are added to `comments` with `type: "reply"` or `type: "mention"` (third-party content is not downloaded).
+- Likes, reposts, bookmarks, and RSVPs are added to `likes`, `reposts`, `bookmarks`, and `rsvps`.
+- Webmentions are always rewritten (no `--overwrite` needed), so mentions deleted upstream are removed.
+- Webmentions of a comment another source imported (e.g. replies backfed by Bridgy) are skipped.
+- Avatars are downloaded (see `--avatarrefs`).
 
 ### Programmatic API
 
@@ -250,6 +278,7 @@ importer.setDryRun(false); // --dryrun
 importer.setDraftsFolder("drafts");
 importer.setAssetsFolder("assets");
 importer.setAssetReferenceType("relative"); // --assetrefs
+importer.setAvatarReferenceType("absolute"); // --avatarrefs
 
 // Sources (one or more)
 importer.addSource("bluesky", "@11ty.dev");
@@ -257,6 +286,7 @@ importer.addSource("bluesky", "@11ty.dev");
 importer.addSource("wordpress", { url: "https://blog.fontawesome.com", comments: false });
 // Front matter only, no content or comments (e.g. for cross links)
 importer.addSource("youtubeUser", { id: "UCskGTioqrMBcw8pd14_334A", content: false });
+
 
 // Simple CSS selector (class names only) for preserved elements in Markdown conversion
 importer.addPreserved(".save-this-class-name");

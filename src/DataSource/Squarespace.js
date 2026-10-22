@@ -152,10 +152,10 @@ export class Squarespace extends DataSource {
 		return `${this.getSiteUrl()}/api/comment/GetComments?targetId=${encodeURIComponent(id)}&targetType=1&page=${pageNumber}`;
 	}
 
-	async #getComments(id) {
+	async #getComments(id, entry) {
 		let comments = [];
 		for(let pageNumber = 1; ; pageNumber++) {
-			let data = await this.getOptionalData(this.#getCommentsUrl(id, pageNumber), "json");
+			let data = await this.getOptionalData(this.#getCommentsUrl(id, pageNumber), "json", [entry]);
 			let pageComments = data?.comments || [];
 			if(pageComments.length === 0) {
 				break;
@@ -177,7 +177,7 @@ export class Squarespace extends DataSource {
 		await Promise.all(entries.map(async entry => {
 			let id = entry.metadata?.id;
 			if(this.#commentCounts.get(id) > 0) {
-				entry.comments = await this.#getComments(id);
+				entry.comments = await this.#getComments(id, entry);
 			}
 		}));
 	}

@@ -101,10 +101,12 @@ export class Rss extends DataSource {
 		await Promise.all(entries.map(async entry => {
 			let url = this.#commentFeeds.get(entry.uuid);
 			if(!url) {
+				// Nothing to request, existing comments are kept
+				this.setCommentsIncomplete([entry]);
 				return;
 			}
 
-			let data = await this.getOptionalData(url);
+			let data = await this.getOptionalData(url, this.getType(), [entry]);
 			entry.comments = DataSource.sortComments(MediaRss.toArray(data?.rss?.channel?.item).map(item => {
 				return DataSource.cleanComment({
 					id: item.guid?.["#text"] ?? item.guid ?? item.link,

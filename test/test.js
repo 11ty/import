@@ -1967,7 +1967,8 @@ for(let archivePath of [TWITTER_FOLDER, TWITTER_ZIP]) {
 
 		await importer.transformComments(entry);
 		let [first, second] = entry.comments;
-		assert.match(first.author.avatarUrl, /^assets\/avatar-\w+\.jpg$/);
+		// Avatars default to the root assets folder
+		assert.match(first.author.avatarUrl, /^\/assets\/avatar-\w+\.jpg$/);
 		assert.match(second.content, /<img src="assets\/Photo2-\w+\.jpg" alt="">/);
 	});
 
@@ -2525,4 +2526,236 @@ test("Asset filenames replace URL-unsafe characters", async (t) => {
 	assert.equal(Fetcher.getFilenameFromSrc("https://example.com/Screen%20Shot%202023-07-12%20at%207.41.23%20AM.png"), `Screen-Shot-2023-07-12-at-7.41-${Fetcher.createHash("https://example.com/Screen%20Shot%202023-07-12%20at%207.41.23%20AM.png")}.png`);
 	assert.equal(Fetcher.getFilenameFromSrc("https://example.com/caf%C3%A9%20(1).jpg"), `café-1-${Fetcher.createHash("https://example.com/caf%C3%A9%20(1).jpg")}.jpg`);
 	assert.equal(Fetcher.getFilenameFromSrc("https://example.com/plain-file_1.png"), `plain-file_1-${Fetcher.createHash("https://example.com/plain-file_1.png")}.png`);
+});
+
+test("Avatar reference types", async (t) => {
+	let entry = { url: "https://example.com/blog/one/", filePath: "out/blog/one.md" };
+	let fetcher = new Fetcher();
+	fetcher.setOutputFolder("out");
+	let location = refType => fetcher.getAssetLocation("https://example.com/avatar.png", "image/png", entry, refType);
+
+	assert.match(location("absolute").url, /^\/assets\/avatar-\w+\.png$/);
+	assert.match(location("absolute").filePath, /^out\/assets\/avatar-\w+\.png$/);
+	assert.match(location("relative").filePath, /^out\/blog\/assets\/avatar-\w+\.png$/);
+	assert.match(location("colocate").url, /^avatar-\w+\.png$/);
+	assert.equal(await fetcher.fetchAsset("https://example.com/avatar.png", entry, "disabled"), "https://example.com/avatar.png");
+
+	let importer = new Importer();
+	assert.equal(importer.getAvatarReferenceType(), "absolute");
+	importer.setAssetReferenceType("disabled");
+	assert.equal(importer.getAvatarReferenceType(), "disabled");
+	importer.setAvatarReferenceType("relative");
+	assert.equal(importer.getAvatarReferenceType(), "relative");
+	assert.throws(() => importer.setAvatarReferenceType("nope"), /--avatarrefs/);
+});
+
+const WEBMENTIONS_API = "https://webmention.io/api/mentions.jf2?domain=example.com&per-page=100&page=0&token=secret";
+
+function webmention(id, property, target, extra = {}) {
+	return {
+		type: "entry",
+		"wm-id": id,
+		"wm-property": property,
+		"wm-target": target,
+		"wm-source": `https://brid.gy/${id}`,
+		"wm-received": "2024-01-05T00:00:00Z",
+		author: { type: "card", name: `Author ${id}`, url: `https://author${id}.example/`, photo: "" },
+		...extra,
+	};
+}
+
+function getWebmentionsImporter(t, children, outputFolder) {
+	withEnv(t, { WEBMENTION_IO_TOKEN: "secret" });
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(!outputFolder);
+	if(outputFolder) {
+		importer.setOutputFolder(outputFolder);
+	}
+	importer.setAssetReferenceType("disabled");
+	importer.addSource("webmentions", "https://www.example.com/");
+	importer.addDataOverride("webmention", WEBMENTIONS_API.replace("example.com", "www.example.com"), { type: "feed", children });
+	return importer;
+}
+
+test("Webmentions", async (t) => {
+	let importer = getWebmentionsImporter(t, [
+		webmention(10, "in-reply-to", "http://www.example.com/one/index.html#comments", { published: "2024-01-03T00:00:00Z", url: "https://site.example/reply", content: { html: "<p>Reply</p>", text: "Reply" } }),
+		webmention(11, "mention-of", "https://example.com/one?utm_source=x", { content: { text: "Plain\ntext" } }),
+		webmention(13, "in-reply-to", "https://example.com/one/", { "wm-private": true, content: { text: "Secret" } }),
+		webmention(14, "like-of", "https://example.com/one/", { url: "https://site.example/like" }),
+		webmention(15, "rsvp", "https://example.com/one/", { rsvp: "yes" }),
+		webmention(16, "repost-of", "https://example.com/two/"),
+	]);
+
+	let [one, two] = (await importer.getEntries()).sort((a, b) => a.url.localeCompare(b.url));
+
+	assert.equal(one.url, "http://www.example.com/one/");
+	assert.equal(one.filePath, "one.html");
+	assert.deepEqual(one.comments, [
+		{ id: 10, parentId: 0, url: "https://site.example/reply", author: { name: "Author 10", url: "https://author10.example/" }, date: new Date("2024-01-03T00:00:00Z"), content: "<p>Reply</p>", type: "reply" },
+		{ id: 11, parentId: 0, url: "https://brid.gy/11", author: { name: "Author 11", url: "https://author11.example/" }, date: new Date("2024-01-05T00:00:00Z"), content: "Plain<br>\ntext", type: "mention" },
+		{ id: 13, parentId: 0, url: "https://brid.gy/13", private: true, date: new Date("2024-01-05T00:00:00Z"), type: "reply" },
+	]);
+	assert.deepEqual(one.likes, [{ id: 14, url: "https://site.example/like", date: new Date("2024-01-05T00:00:00Z"), author: { name: "Author 14", url: "https://author14.example/" } }]);
+	assert.deepEqual(one.rsvps, [{ id: 15, url: "https://brid.gy/15", date: new Date("2024-01-05T00:00:00Z"), author: { name: "Author 15", url: "https://author15.example/" }, rsvp: "yes" }]);
+	assert.equal(two.reposts.length, 1);
+	assert.equal(two.comments, undefined);
+	assert.equal(importer.getCounts().errors, 0);
+});
+
+test("Webmentions require a token", async (t) => {
+	withEnv(t, { WEBMENTION_IO_TOKEN: undefined });
+	assert.throws(() => new Importer().addSource("webmentions", "example.com"), /WEBMENTION_IO_TOKEN/);
+});
+
+test("Webmentions token isn’t logged", async (t) => {
+	withEnv(t, { WEBMENTION_IO_TOKEN: "secret" });
+	let importer = new Importer();
+	importer.addSource("webmentions", "example.com");
+	let [source] = importer.getSources();
+	assert.equal(source.getLogUrl(WEBMENTIONS_API), WEBMENTIONS_API.replace("token=secret", "token=…"));
+});
+
+test("Webmention avatars are downloaded", async (t) => {
+	let author = { type: "card", name: "Jane", photo: "https://webmention.io/avatar/jane.png" };
+	let importer = getWebmentionsImporter(t, [
+		webmention(1, "in-reply-to", "https://www.example.com/one/", { author, content: { html: `<p><img src="https://jane.example/photo.jpg"></p>` } }),
+		webmention(2, "like-of", "https://www.example.com/one/", { author }),
+	]);
+	importer.setAssetReferenceType("relative");
+	importer.fetcher.fetchAsset = async (url, entry, refType) => `/${refType}/${new URL(url).pathname.split("/").pop()}`;
+
+	let [entry] = await importer.getEntries();
+	assert.deepEqual(entry.comments[0].author, { name: "Jane", avatarUrl: "/absolute/jane.png" });
+	// Third-party content is unchanged
+	assert.equal(entry.comments[0].content, `<p><img src="https://jane.example/photo.jpg"></p>`);
+	assert.deepEqual(entry.likes[0].author, { name: "Jane", avatarUrl: "/absolute/jane.png" });
+});
+
+test("Data files are shared by sources", async (t) => {
+	let dir = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-data-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	let dataFile = path.join(dir, "one.json");
+
+	// Earlier import (no `via`) and a key the importer doesn’t manage
+	fs.writeFileSync(dataFile, JSON.stringify({
+		custom: true,
+		comments: [{ id: 1, parentId: 0, url: "https://mastodon.example/@jane/1", date: "2024-01-01T00:00:00.000Z", content: "Native" }],
+	}));
+
+	let webmentions = getWebmentionsImporter(t, [
+		webmention(10, "in-reply-to", "https://www.example.com/one/", { url: "https://site.example/reply", content: { text: "Reply" } }),
+		// Bridgy backfeed of the native comment
+		webmention(11, "in-reply-to", "https://www.example.com/one/", { url: "https://mastodon.example/@jane/1", content: { text: "Duplicate" } }),
+		webmention(12, "like-of", "https://www.example.com/one/"),
+	], dir);
+	await webmentions.toFiles(await webmentions.getEntries());
+
+	// No post is written
+	assert.deepEqual(fs.readdirSync(dir), ["one.json"]);
+	let data = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+	assert.equal(data.custom, true);
+	assert.deepEqual(data.comments.map(({ id, via }) => [id, via]), [[1, undefined], [10, "webmention"]]);
+	assert.deepEqual(data.likes.map(({ id, via }) => [id, via]), [[12, "webmention"]]);
+
+	// Always rewritten: mentions deleted upstream are removed
+	let rerun = getWebmentionsImporter(t, [webmention(12, "like-of", "https://www.example.com/one/")], dir);
+	await rerun.toFiles(await rerun.getEntries());
+	data = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+	assert.deepEqual(data.comments.map(({ id }) => id), [1]);
+
+	// A post source replaces its own (and earlier) comments, webmentions are kept
+	await importCommentsTo(dir, [{ id: 2, parentId: 0, date: new Date("2024-01-02T00:00:00Z"), content: "Updated" }]);
+	data = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+	assert.deepEqual(data.comments.map(({ id, via }) => [id, via]), [[2, "arbitrary"]]);
+	assert.deepEqual(data.likes.map(({ id }) => id), [12]);
+	assert.equal(data.custom, true);
+
+	// Comments deleted upstream are removed
+	await importCommentsTo(dir, []);
+	data = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+	assert.equal(data.comments, undefined);
+	assert.deepEqual(data.likes.map(({ id }) => id), [12]);
+});
+
+// Post source with comments at https://example.com/one/ (or a failed comment request, with or without its entry)
+async function importCommentsTo(dir, comments, { fail = false, attributed = true, supported = true } = {}) {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setOutputFolder(dir);
+	importer.setAssetReferenceType("disabled");
+	importer.setSafeMode(false);
+
+	class MySource extends DataSource {
+		static TYPE = "arbitrary";
+		static SUPPORTS_COMMENTS = supported;
+
+		getType() {
+			return "json";
+		}
+
+		getUrl() {
+			return "https://example.com/posts.json";
+		}
+
+		async addComments(entries) {
+			for(let entry of entries) {
+				if(fail) {
+					await this.getOptionalData("https://example.com/comments.json", "json", attributed ? [entry] : undefined);
+				}
+				entry.comments = comments;
+			}
+		}
+	}
+
+	importer.addSource(MySource);
+	let [source] = importer.getSources();
+	source.setDataOverride("https://example.com/posts.json", [{ url: "https://example.com/one/", content: "One", contentType: "text" }]);
+	source.setDataOverride("https://example.com/comments.json", new Error("Rate limited"));
+	await importer.toFiles(await importer.getEntries());
+}
+
+test("Data files keep comments when comments are incomplete", async (t) => {
+	let dir = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-data-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	let dataFile = path.join(dir, "one.json");
+	let comment = (id, content) => ({ id, parentId: 0, date: new Date(`2024-01-0${id}T00:00:00Z`), content });
+	let read = () => JSON.parse(fs.readFileSync(dataFile, "utf8")).comments.map(({ id, content }) => [id, content]);
+
+	await importCommentsTo(dir, [comment(1, "First"), comment(2, "Second")]);
+	assert.deepEqual(read(), [[1, "First"], [2, "Second"]]);
+
+	// A failed request keeps existing comments and updates fetched ones
+	await importCommentsTo(dir, [comment(2, "Edited"), comment(3, "Third")], { fail: true });
+	assert.deepEqual(read(), [[1, "First"], [2, "Edited"], [3, "Third"]]);
+
+	// A failed request with no comments doesn’t clear them
+	await importCommentsTo(dir, [], { fail: true });
+	assert.deepEqual(read(), [[1, "First"], [2, "Edited"], [3, "Third"]]);
+
+	// A failed request without entries affects all of the source’s entries
+	await importCommentsTo(dir, [], { fail: true, attributed: false });
+	assert.deepEqual(read(), [[1, "First"], [2, "Edited"], [3, "Third"]]);
+
+	// Comments disabled: the data file isn’t touched
+	await importCommentsTo(dir, [], { supported: false });
+	assert.deepEqual(read(), [[1, "First"], [2, "Edited"], [3, "Third"]]);
+
+	// Complete comments replace them
+	await importCommentsTo(dir, [comment(3, "Third")]);
+	assert.deepEqual(read(), [[3, "Third"]]);
+});
+
+test("Comment request failures only affect their own entries", async (t) => {
+	let source = new DataSource();
+	source.setVerbose(false);
+	let [one, two] = [{}, {}];
+	source.setDataOverride("https://example.com/one.json", new Error("Rate limited"));
+	source.setDataOverride("https://example.com/two.json", { ok: true });
+
+	await source.getOptionalData("https://example.com/one.json", "json", [one]);
+	await source.getOptionalData("https://example.com/two.json", "json", [two]);
+	assert.equal(DataSource.hasIncompleteComments(one), true);
+	assert.equal(DataSource.hasIncompleteComments(two), false);
 });

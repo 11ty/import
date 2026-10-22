@@ -117,10 +117,12 @@ export class Atom extends DataSource {
 		await Promise.all(entries.map(async entry => {
 			let feed = this.#commentFeeds.get(entry.uuid);
 			if(!feed) {
+				// Nothing to request, existing comments are kept
+				this.setCommentsIncomplete([entry]);
 				return;
 			}
 
-			let data = await this.getOptionalData(feed.url);
+			let data = await this.getOptionalData(feed.url, this.getType(), [entry]);
 			entry.comments = DataSource.sortComments(MediaRss.toArray(data?.feed?.entry).map(rawComment => {
 				let { content, contentType } = Atom.getContent(rawComment);
 				let alternate = MediaRss.toArray(rawComment.link).find(link => !link["@_rel"] || link["@_rel"] === "alternate");
