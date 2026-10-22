@@ -38,6 +38,73 @@
 			<wp:meta_key><![CDATA[_thumbnail_id]]></wp:meta_key>
 			<wp:meta_value><![CDATA[9]]></wp:meta_value>
 		</wp:postmeta>
+		<wp:comment>
+			<wp:comment_id>3</wp:comment_id>
+			<wp:comment_author><![CDATA[Zach Leatherman]]></wp:comment_author>
+			<wp:comment_author_email><![CDATA[zach@example.com]]></wp:comment_author_email>
+			<wp:comment_author_url></wp:comment_author_url>
+			<wp:comment_author_IP><![CDATA[192.0.2.1]]></wp:comment_author_IP>
+			<wp:comment_date><![CDATA[2024-01-03 05:00:00]]></wp:comment_date>
+			<wp:comment_date_gmt><![CDATA[2024-01-03 10:00:00]]></wp:comment_date_gmt>
+			<wp:comment_content><![CDATA[Thanks!]]></wp:comment_content>
+			<wp:comment_approved><![CDATA[1]]></wp:comment_approved>
+			<wp:comment_type><![CDATA[comment]]></wp:comment_type>
+			<wp:comment_parent>2</wp:comment_parent>
+		</wp:comment>
+		<wp:comment>
+			<wp:comment_id>2</wp:comment_id>
+			<wp:comment_author><![CDATA[Jane &amp; Co]]></wp:comment_author>
+			<wp:comment_author_email><![CDATA[jane@example.com]]></wp:comment_author_email>
+			<wp:comment_author_url>https://jane.example/</wp:comment_author_url>
+			<wp:comment_author_IP><![CDATA[192.0.2.1]]></wp:comment_author_IP>
+			<wp:comment_date><![CDATA[2024-01-03 04:00:00]]></wp:comment_date>
+			<wp:comment_date_gmt><![CDATA[2024-01-03 09:00:00]]></wp:comment_date_gmt>
+			<wp:comment_content><![CDATA[Great post!
+
+Second line.]]></wp:comment_content>
+			<wp:comment_approved><![CDATA[1]]></wp:comment_approved>
+			<wp:comment_type><![CDATA[comment]]></wp:comment_type>
+			<wp:comment_parent>0</wp:comment_parent>
+		</wp:comment>
+		<wp:comment>
+			<wp:comment_id>4</wp:comment_id>
+			<wp:comment_author><![CDATA[Spammer]]></wp:comment_author>
+			<wp:comment_author_email><![CDATA[jane@example.com]]></wp:comment_author_email>
+			<wp:comment_author_url></wp:comment_author_url>
+			<wp:comment_author_IP><![CDATA[192.0.2.1]]></wp:comment_author_IP>
+			<wp:comment_date><![CDATA[2024-01-04 04:00:00]]></wp:comment_date>
+			<wp:comment_date_gmt><![CDATA[2024-01-04 09:00:00]]></wp:comment_date_gmt>
+			<wp:comment_content><![CDATA[Buy now]]></wp:comment_content>
+			<wp:comment_approved><![CDATA[spam]]></wp:comment_approved>
+			<wp:comment_type><![CDATA[comment]]></wp:comment_type>
+			<wp:comment_parent>0</wp:comment_parent>
+		</wp:comment>
+		<wp:comment>
+			<wp:comment_id>5</wp:comment_id>
+			<wp:comment_author><![CDATA[Other Blog]]></wp:comment_author>
+			<wp:comment_author_email><![CDATA[jane@example.com]]></wp:comment_author_email>
+			<wp:comment_author_url></wp:comment_author_url>
+			<wp:comment_author_IP><![CDATA[192.0.2.1]]></wp:comment_author_IP>
+			<wp:comment_date><![CDATA[2024-01-05 04:00:00]]></wp:comment_date>
+			<wp:comment_date_gmt><![CDATA[2024-01-05 09:00:00]]></wp:comment_date_gmt>
+			<wp:comment_content><![CDATA[Linked here]]></wp:comment_content>
+			<wp:comment_approved><![CDATA[1]]></wp:comment_approved>
+			<wp:comment_type><![CDATA[pingback]]></wp:comment_type>
+			<wp:comment_parent>0</wp:comment_parent>
+		</wp:comment>
+		<wp:comment>
+			<wp:comment_id>6</wp:comment_id>
+			<wp:comment_author><![CDATA[Pending]]></wp:comment_author>
+			<wp:comment_author_email><![CDATA[jane@example.com]]></wp:comment_author_email>
+			<wp:comment_author_url></wp:comment_author_url>
+			<wp:comment_author_IP><![CDATA[192.0.2.1]]></wp:comment_author_IP>
+			<wp:comment_date><![CDATA[2024-01-06 04:00:00]]></wp:comment_date>
+			<wp:comment_date_gmt><![CDATA[2024-01-06 09:00:00]]></wp:comment_date_gmt>
+			<wp:comment_content><![CDATA[Awaiting moderation]]></wp:comment_content>
+			<wp:comment_approved><![CDATA[0]]></wp:comment_approved>
+			<wp:comment_type><![CDATA[comment]]></wp:comment_type>
+			<wp:comment_parent>0</wp:comment_parent>
+		</wp:comment>
 	</item>
 	<item>
 		<title><![CDATA[Classic]]></title>

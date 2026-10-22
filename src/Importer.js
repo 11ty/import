@@ -200,6 +200,7 @@ class Importer {
 		let label;
 		let filepathFormat;
 		let postTypes;
+		let comments;
 
 		if(typeof options === "string") {
 			identifier = options;
@@ -208,6 +209,7 @@ class Importer {
 			label = options.label;
 			filepathFormat = options.filepathFormat;
 			postTypes = options.postTypes;
+			comments = options.comments;
 		}
 
 		let source = new cls(identifier);
@@ -236,6 +238,15 @@ class Importer {
 				throw new Error(`The postTypes option is not supported by the ${source.constructor.TYPE} source type.`);
 			}
 			source.setPostTypes(postTypes);
+		}
+
+		// Enabled by default for sources that support comments
+		if(comments !== undefined) {
+			if(typeof source.setComments === "function") {
+				source.setComments(comments);
+			} else if(comments) {
+				throw new Error(`The comments option is not supported by the ${source.constructor.TYPE} source type.`);
+			}
 		}
 
 		this.sources.push(source);
@@ -483,15 +494,13 @@ class Importer {
 		}
 
 		let subdirs = [];
-		if(this.#outputFolder) {
-			subdirs.push(this.#outputFolder);
-		}
 		if(this.#draftsFolder && entry.status === "draft") {
 			subdirs.push(this.#draftsFolder);
 		}
 
 		// Always uses `/` separators (Windows compatible) so downstream path handling can split on `/`
-		let pathname = Utils.pathJoin(".", ...subdirs, fallbackPath);
+		// Output folder is first so absolute paths are kept
+		let pathname = Utils.pathJoin(this.#outputFolder || ".", ...subdirs, fallbackPath);
 		let extension = contentType === "markdown" ? ".md" : ".html";
 
 		if(pathname.endsWith("/")) {
@@ -543,6 +552,15 @@ class Importer {
 		return frontMatter;
 	}
 
+	// Template data file next to the post (e.g. `my-post.md` → `my-post.json`)
+	static getCommentsFilePath(filePath) {
+		return filePath.replace(/\.[^./]+$/, "") + ".json";
+	}
+
+	static convertCommentsToJson(entry) {
+		return JSON.stringify({ comments: entry.comments }, null, "\t");
+	}
+
 	// TODO options.pathPrefix
 	async toFiles(entries = []) {
 		let filepathConflicts = {};
@@ -585,13 +603,33 @@ ${entry.content}`;
 				fs.writeFileSync(pathname, content, { encoding: "utf8" });
 			}
 
+			let files = [{ pathname, content, type: "post" }];
+			if(entry.comments?.length) {
+				let commentsPathname = Importer.getCommentsFilePath(pathname);
+				let commentsContent = Importer.convertCommentsToJson(entry);
+				files.push({ pathname: commentsPathname, content: commentsContent, type: "comments" });
+
+				if(this.isVerbose) {
+					Logger.importing("comments", commentsPathname, entry.url, {
+						size: commentsContent.length,
+						dryRun: this.dryRun
+					});
+				}
+
+				if(!this.dryRun) {
+					fs.writeFileSync(commentsPathname, commentsContent, { encoding: "utf8" });
+				}
+			}
+
 			// Happens independent of file system (--dryrun or --overwrite)
 			// Don’t persist if post is a draft
 			if(entry.status !== "draft" && this.persistManager.canPersist()) {
-				await this.persistManager.persistFile(pathname, content, {
-					url: entry.url,
-					type: "post",
-				});
+				for(let file of files) {
+					await this.persistManager.persistFile(file.pathname, file.content, {
+						url: entry.url,
+						type: file.type,
+					});
+				}
 			}
 		}
 	}

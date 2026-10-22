@@ -1,6 +1,7 @@
 import { DateCompare } from "@11ty/eleventy-utils";
 
 import { DataSource } from "../DataSource.js";
+import { Logger } from "../Logger.js";
 
 // Load WORDPRESS_USERNAME and WORDPRESS_PASSWORD from an optional .env file
 try {
@@ -20,8 +21,10 @@ export class WordPressApi extends DataSource {
 	static DEFAULT_POST_TYPES = ["posts", "pages"];
 	static BUILTIN_REST_BASES = ["posts", "pages"];
 	static WORDPRESSDOTCOM_API = "https://public-api.wordpress.com/wp/v2/sites/";
+	static PER_PAGE = 100;
 
 	#postTypes = WordPressApi.DEFAULT_POST_TYPES;
+	#includeComments = true;
 	#restBase = "posts";
 	#apiRoot;
 	#types;
@@ -108,6 +111,10 @@ export class WordPressApi extends DataSource {
 		return this.#postTypes;
 	}
 
+	setComments(includeComments) {
+		this.#includeComments = Boolean(includeComments);
+	}
+
 	#getRestBases() {
 		let builtins = { post: "posts", page: "pages" };
 		let types = this.#types || {};
@@ -157,7 +164,78 @@ export class WordPressApi extends DataSource {
 			this.#restBase = restBase;
 			entries.push(...await super.getEntries());
 		}
+
+		if(this.#includeComments) {
+			await this.#addComments(entries);
+		}
+
 		return entries;
+	}
+
+	#getCommentsUrl(postIds, pageNumber) {
+		return this.#getSubtypeUrl("comments", "", `post=${encodeURIComponent(postIds.join(","))}&page=${pageNumber}&per_page=${WordPressApi.PER_PAGE}&order=asc`);
+	}
+
+	static cleanComment(rawComment) {
+		let author = {
+			name: rawComment.author_name,
+		};
+		if(rawComment.author_url) {
+			author.url = rawComment.author_url;
+		}
+		let avatarUrls = rawComment.author_avatar_urls || {};
+		let avatarUrl = avatarUrls[Object.keys(avatarUrls).pop()];
+		if(avatarUrl) {
+			author.avatarUrl = avatarUrl;
+		}
+
+		return {
+			id: rawComment.id,
+			parentId: rawComment.parent || 0,
+			author,
+			date: new Date(Date.parse(`${rawComment.date_gmt}Z`)),
+			content: rawComment.content?.rendered || "",
+		};
+	}
+
+	// Approved comments (the API default) are requested in bulk for up to 100 posts at a time
+	async #addComments(entries) {
+		let entriesById = new Map(entries.filter(entry => entry.metadata?.id).map(entry => [entry.metadata.id, entry]));
+		let ids = Array.from(entriesById.keys());
+
+		for(let i = 0; i < ids.length; i += WordPressApi.PER_PAGE) {
+			let postIds = ids.slice(i, i + WordPressApi.PER_PAGE);
+			let pageNumber = 1;
+			let url;
+
+			try {
+				while(url = this.#getCommentsUrl(postIds, pageNumber)) {
+					let comments = await this.getData(url, this.getType(), false);
+					if(!Array.isArray(comments)) {
+						break;
+					}
+
+					for(let rawComment of comments) {
+						let entry = entriesById.get(rawComment.post);
+						if(entry) {
+							entry.comments ??= [];
+							entry.comments.push(WordPressApi.cleanComment(rawComment));
+						}
+					}
+
+					if(comments.length < WordPressApi.PER_PAGE) {
+						break;
+					}
+					pageNumber++;
+				}
+			} catch(e) {
+				// Posts are still imported when comments aren’t available
+				if(this.isVerbose && await this.isErrorWorthWorryingAbout(e)) {
+					Logger.error(`Error fetching comments from ${url}: ${e.message}`);
+				}
+				this.fetcher.clearError(url);
+			}
+		}
 	}
 
 	// some pagination errors just mean there are no more pages

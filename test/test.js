@@ -1200,3 +1200,119 @@ test("WordPress XML export", async (t) => {
 	postsOnly.addSource("wordpressxml", { url: "./test/sources/wordpress-export.xml", postTypes: "posts" });
 	assert.equal((await postsOnly.getEntries({ contentType: "html" })).length, 2);
 });
+
+test("WordPress XML comments", async (t) => {
+	let withoutComments = new Importer();
+	withoutComments.setVerbose(false);
+	withoutComments.setDryRun(true);
+	withoutComments.addSource("wordpressxml", { url: "./test/sources/wordpress-export.xml", comments: false });
+	assert.ok((await withoutComments.getEntries({ contentType: "html" })).every(entry => !entry.comments));
+
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+	importer.addSource("wordpressxml", "./test/sources/wordpress-export.xml");
+
+	let [draft, post] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(draft.comments, undefined);
+
+	// Spam, pending, and pingbacks are skipped, sorted oldest first
+	assert.deepEqual(post.comments, [
+		{
+			id: 2,
+			parentId: 0,
+			author: { name: "Jane & Co", url: "https://jane.example/" },
+			date: new Date("2024-01-03T09:00:00.000Z"),
+			content: "<p>Great post!</p>\n<p>Second line.</p>",
+		},
+		{
+			id: 3,
+			parentId: 2,
+			author: { name: "Zach Leatherman" },
+			date: new Date("2024-01-03T10:00:00.000Z"),
+			content: "<p>Thanks!</p>",
+		},
+	]);
+
+	assert.equal(Importer.getCommentsFilePath(post.filePath), "block-editor.json");
+	assert.equal(Importer.getCommentsFilePath("dist/posts/test/index.md"), "dist/posts/test/index.json");
+
+	let json = Importer.convertCommentsToJson(post);
+	assert.equal(JSON.parse(json).comments[1].date, "2024-01-03T10:00:00.000Z");
+	assert.ok(!json.includes("@example.com"));
+	assert.ok(!json.includes("192.0.2.1"));
+});
+
+test("WordPress API comments are requested in bulk", async (t) => {
+	withEnv(t, { WORDPRESS_USERNAME: undefined, WORDPRESS_PASSWORD: undefined });
+
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+	importer.addSource("wordpress", { url: "https://blog.fontawesome.com/", postTypes: "posts" });
+
+	addWordPressTypes(importer);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 1), [getWordPressPostWithTerms()]);
+	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 2), []);
+	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/users/155431370", require("./sources/blog-awesome-author.json"));
+	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/comments/?post=3829&page=1&per_page=100&order=asc", [
+		{
+			id: 7,
+			post: 3829,
+			parent: 0,
+			author_name: "Jane",
+			author_url: "https://jane.example/",
+			author_avatar_urls: { "24": "https://gravatar.example/24", "96": "https://gravatar.example/96" },
+			date_gmt: "2024-01-03T09:00:00",
+			content: { rendered: "<p>Great post!</p>\n" },
+		},
+		// Not an imported post
+		{ id: 8, post: 1, parent: 0, author_name: "Other", date_gmt: "2024-01-03T09:00:00", content: { rendered: "" } },
+	]);
+
+	let [entry] = await importer.getEntries({ contentType: "html" });
+	assert.deepEqual(entry.comments, [{
+		id: 7,
+		parentId: 0,
+		author: { name: "Jane", url: "https://jane.example/", avatarUrl: "https://gravatar.example/96" },
+		date: new Date("2024-01-03T09:00:00.000Z"),
+		content: "<p>Great post!</p>\n",
+	}]);
+	assert.equal(importer.getCounts().errors, 0);
+});
+
+test("comments is not supported by other source types", async (t) => {
+	let importer = new Importer();
+
+	assert.throws(() => {
+		importer.addSource("rss", { url: "https://example.com/feed.xml", comments: true });
+	});
+
+	// Disabling is a no-op
+	importer.addSource("rss", { url: "https://example.com/feed.xml", comments: false });
+});
+
+test("Absolute output folders are kept", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setOutputFolder("/var/output");
+	importer.setAssetReferenceType("disabled");
+
+	class MySource extends DataSource {
+		static TYPE = "arbitrary";
+		static TYPE_FRIENDLY = "Arbitrary";
+
+		getData() {
+			return [{ url: "https://example.com/posts/test/" }, { url: "https://example.com/posts/draft/", status: "draft" }];
+		}
+	}
+
+	importer.addSource(MySource);
+
+	let entries = await importer.getEntries();
+	assert.deepEqual(entries.map(entry => entry.filePath).sort(), ["/var/output/drafts/posts/draft.html", "/var/output/posts/test.html"]);
+});

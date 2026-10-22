@@ -13,8 +13,10 @@ export class WordPressXml extends DataSource {
 	static DEFAULT_POST_TYPES = ["post", "page"];
 	static STATUSES = ["publish", "draft"];
 	static EMPTY_DATE = "0000-00-00 00:00:00";
+	static IGNORED_COMMENT_TYPES = ["pingback", "trackback"];
 
 	#postTypes = WordPressXml.DEFAULT_POST_TYPES;
+	#includeComments = true;
 	#siteUrl;
 	#authors = new Map();
 	#attachments = new Map();
@@ -37,6 +39,10 @@ export class WordPressXml extends DataSource {
 
 	getPostTypes() {
 		return this.#postTypes;
+	}
+
+	setComments(includeComments) {
+		this.#includeComments = Boolean(includeComments);
 	}
 
 	// Local file path or URL
@@ -146,6 +152,29 @@ export class WordPressXml extends DataSource {
 		return content.trim();
 	}
 
+	// Approved comments only, without commenter emails or IP addresses
+	static getComments(rawEntry) {
+		return MediaRss.toArray(rawEntry["wp:comment"]).filter(comment => {
+			return String(comment["wp:comment_approved"]) === "1" && !WordPressXml.IGNORED_COMMENT_TYPES.includes(comment["wp:comment_type"]);
+		}).map(comment => {
+			let author = {
+				name: entities.decodeHTML(WordPressXml.toString(comment["wp:comment_author"])),
+			};
+			let url = WordPressXml.toString(comment["wp:comment_author_url"]);
+			if(url) {
+				author.url = url;
+			}
+
+			return {
+				id: comment["wp:comment_id"],
+				parentId: comment["wp:comment_parent"] || 0,
+				author,
+				date: WordPressXml.toDate(comment["wp:comment_date_gmt"], comment["wp:comment_date"]),
+				content: WordPressXml.cleanContent(comment["wp:comment_content"]),
+			};
+		}).sort((a, b) => a.date - b.date);
+	}
+
 	cleanEntry(rawEntry) {
 		let meta = WordPressXml.getMeta(rawEntry);
 
@@ -209,6 +238,13 @@ export class WordPressXml extends DataSource {
 		if(metadata.categories) {
 			// map WordPress categories for use in Eleventy tags (not WordPress metadata tags, which are different)
 			cleanEntry.tags = metadata.categories;
+		}
+
+		if(this.#includeComments) {
+			let comments = WordPressXml.getComments(rawEntry);
+			if(comments.length) {
+				cleanEntry.comments = comments;
+			}
 		}
 
 		return cleanEntry;

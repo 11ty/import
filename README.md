@@ -106,6 +106,8 @@ npx @11ty/import wordpress https://en.blog.wordpress.com
 npx @11ty/import wordpressxml ./example.WordPress.2024-01-01.xml --posttypes=posts,pages,product
 ```
 
+Each post with approved comments gets a [template data file](https://www.11ty.dev/docs/data-template-dir/) next to it (e.g. `my-post.md` and `my-post.json`) with a `comments` array (`id`, `parentId`, `author`, `date`, `content`). Commenter emails and IP addresses are not imported. Skip comments with `importer.addSource("wordpress", { url, comments: false })`.
+
 #### Atom Feeds
 
 ```sh
@@ -157,6 +159,8 @@ importer.setAssetReferenceType("relative"); // --assetrefs
 
 // Sources (one or more)
 importer.addSource("bluesky", "@11ty.dev");
+// WordPress comments are imported by default
+importer.addSource("wordpress", { url: "https://blog.fontawesome.com", comments: false });
 
 // Simple CSS selector (class names only) for preserved elements in Markdown conversion
 importer.addPreserved(".save-this-class-name");
