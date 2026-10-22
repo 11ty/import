@@ -27,6 +27,27 @@ class HtmlTransformer {
 		return url.startsWith("https:") || url.startsWith("http:") || url.startsWith("//");
 	}
 
+	// Root-relative path for absolute URLs on the imported site
+	static getSiteRelativeUrl(url, siteUrl) {
+		if(!siteUrl || !this.isAbsoluteUrl(url)) {
+			return;
+		}
+
+		let resolved;
+		try {
+			resolved = new URL(url.startsWith("//") ? `https:${url}` : url);
+		} catch(e) {
+			return;
+		}
+
+		// Links with a query string (e.g. `?p=123`, search) won’t exist on a static site
+		if(resolved.search || !this.isSiteUrl(resolved, siteUrl)) {
+			return;
+		}
+
+		return `${resolved.pathname}${resolved.hash}`;
+	}
+
 	// Downloads linked files (e.g. uploads) and makes links to the imported site root-relative
 	async transformLink(url, entry) {
 		let source = entry.source;
@@ -46,11 +67,7 @@ class HtmlTransformer {
 			return this.#fetcher.fetchAsset(resolved.toString(), entry);
 		}
 
-		// Links with a query string (e.g. `?p=123`, search) won’t exist on a static site
-		let siteUrl = source?.getSiteUrl();
-		if(siteUrl && HtmlTransformer.isAbsoluteUrl(url) && !resolved.search && HtmlTransformer.isSiteUrl(resolved, siteUrl)) {
-			return `${resolved.pathname}${resolved.hash}`;
-		}
+		return HtmlTransformer.getSiteRelativeUrl(url, source?.getSiteUrl());
 	}
 
 	async transform(content, entry) {

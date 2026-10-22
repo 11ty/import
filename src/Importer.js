@@ -291,21 +291,31 @@ class Importer {
 		}
 	}
 
-	async fetchAuthorAvatars(cleanEntry) {
+	// Downloads avatars and makes author URLs on the imported site root-relative
+	async transformAuthors(cleanEntry) {
 		if(!Array.isArray(cleanEntry?.authors)) {
 			return;
 		}
 
+		let siteUrl = cleanEntry.source?.getSiteUrl();
+
 		// New objects so authors shared across entries aren’t mutated
 		cleanEntry.authors = await Promise.all(cleanEntry.authors.map(async author => {
-			if(!author?.avatarUrl) {
+			if(!author) {
 				return author;
 			}
 
-			return {
-				...author,
-				avatarUrl: await this.fetcher.fetchAsset(author.avatarUrl, cleanEntry),
-			};
+			let transformed = { ...author };
+			if(author.avatarUrl) {
+				transformed.avatarUrl = await this.fetcher.fetchAsset(author.avatarUrl, cleanEntry);
+			}
+
+			let relativeUrl = author.url && HtmlTransformer.getSiteRelativeUrl(author.url, siteUrl);
+			if(relativeUrl) {
+				transformed.url = relativeUrl;
+			}
+
+			return transformed;
 		}));
 	}
 
@@ -401,7 +411,7 @@ class Importer {
 
 		let promises = await Promise.allSettled(entries.map(async entry => {
 			await this.fetchRelatedMedia(entry);
-			await this.fetchAuthorAvatars(entry);
+			await this.transformAuthors(entry);
 			entry.content = await this.getTransformedContent(entry, outputContentTypeOverride === "markdown");
 
 			if(outputContentTypeOverride === "markdown" && Importer.shouldConvertToMarkdown(entry)) {

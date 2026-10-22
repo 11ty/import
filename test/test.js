@@ -431,7 +431,8 @@ test("WordPress API discovery falls back to WordPress.com, issue #16", async (t)
 	let entries = await importer.getEntries({ contentType: "html" });
 	assert.deepEqual(entries.map(entry => entry.url), ["https://example.com/2025/06/hello/"]);
 	// Embedded, the WordPress.com users endpoint requires auth
-	assert.deepEqual(entries[0].authors, [{ name: "Zach", url: "https://example.com/author/zach/", avatarUrl: "https://example.com/avatar.png", slug: "zach" }]);
+	// Author pages on the site are root-relative
+	assert.deepEqual(entries[0].authors, [{ name: "Zach", url: "/author/zach/", avatarUrl: "https://example.com/avatar.png", slug: "zach" }]);
 	assert.deepEqual(importer.getSources()[0].getHeaders(), {});
 	assert.equal(importer.getCounts().errors, 0);
 });
@@ -505,7 +506,7 @@ test("Author avatars are downloaded as assets", async (t) => {
 	importer.setVerbose(false);
 	importer.setDryRun(true);
 
-	let author = { name: "Zach", avatarUrl: "https://example.com/avatar.png" };
+	let author = { name: "Zach", url: "https://example.com/about/", avatarUrl: "https://example.com/avatar.png" };
 
 	class MySource extends DataSource {
 		static TYPE = "arbitrary";
@@ -530,8 +531,9 @@ test("Author avatars are downloaded as assets", async (t) => {
 
 	let entries = await importer.getEntries({ contentType: "markdown" });
 	assert.deepEqual(entries.map(entry => entry.authors), [
-		[{ name: "Zach", avatarUrl: "assets/avatar.png" }],
-		[{ name: "Zach", avatarUrl: "assets/avatar.png" }, { name: "No avatar" }],
+		// URLs are unchanged for sources that aren’t whole sites
+		[{ name: "Zach", url: "https://example.com/about/", avatarUrl: "assets/avatar.png" }],
+		[{ name: "Zach", url: "https://example.com/about/", avatarUrl: "assets/avatar.png" }, { name: "No avatar" }],
 	]);
 	// shared author objects aren’t mutated
 	assert.equal(author.avatarUrl, "https://example.com/avatar.png");

@@ -1,6 +1,7 @@
 .cache
 node_modules
 .env
+assets
 
 # local
 dist*
