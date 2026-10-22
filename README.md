@@ -139,14 +139,14 @@ npx @11ty/import bluesky @11ty.dev
 
 ### Comments
 
-Comments are imported by default to a [template data file](https://www.11ty.dev/docs/data-template-dir/) next to each post (e.g. `my-post.md` and `my-post.json`) with a `comments` array. Each comment has `id`, `parentId` (`0` for top-level), `url`, `author` (`name`, `url`, `avatarUrl`), `date`, HTML `content`, and an optional `summary` (content warning).
+Comments are imported by default to a [template data file](https://www.11ty.dev/docs/data-template-dir/) next to each post (e.g. `my-post.md` and `my-post.json`) with a `comments` array. Each comment has `id`, `parentId` (`0` for top-level), `url`, `author` (`name`, `url`, `avatarUrl`), `date`, and HTML `content`.
 
-Comments from authors that opted out of wider distribution have `private: true` and only `id`, `parentId`, `url`, and `date` (link to them instead).
+Comments with content warnings or from authors that opted out of wider distribution have `private: true` and only `id`, `parentId`, `url`, and `date` (link to them instead).
 
 - `wordpress`, `wordpressxml`: approved comments (no commenter emails or IP addresses)
 - `youtubeuser`: requires a `YOUTUBE_API_KEY` environment variable ([YouTube Data API](https://developers.google.com/youtube/v3/getting-started))
-- `bluesky`: replies (private when the author discourages showing their account to logged-out users)
-- `fediverse`: public and unlisted replies known to the user’s server (private when unlisted or the author opted out of search engine indexing)
+- `bluesky`: replies (private when labeled or the author discourages showing their account to logged-out users)
+- `fediverse`: public and unlisted replies known to the user’s server (private when unlisted, marked sensitive, or the author opted out of search engine indexing)
 - `rss`, `atom`: per-post comment feeds (`wfw:commentRss` or `<link rel="replies">`), when available
 
 Skip comments with `importer.addSource(type, { url, comments: false })`.

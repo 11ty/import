@@ -1467,12 +1467,20 @@ test("Bluesky replies", async (t) => {
 		record: { text: "Logged-in only", createdAt: "2024-12-05T17:00:00.000Z", reply: { parent: { uri: root } } },
 	};
 
+	let labeled = {
+		uri: "at://did:plc:labeled/app.bsky.feed.post/eee",
+		author: { handle: "labeled.example" },
+		labels: [{ val: "graphic-media" }],
+		record: { text: "Content warning", createdAt: "2024-12-05T18:00:00.000Z", reply: { parent: { uri: root } } },
+	};
+
 	importer.addDataOverride("bluesky", `https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(root)}&depth=100&parentHeight=0`, {
 		thread: {
 			post: { uri: root },
 			replies: [
 				{ post: reply, replies: [{ post: nested, replies: [] }] },
 				{ post: hidden, replies: [] },
+				{ post: labeled, replies: [] },
 				// Blocked
 				{ $type: "app.bsky.feed.defs#blockedPost", uri: "at://did:plc:blocked/app.bsky.feed.post/ccc" },
 			],
@@ -1501,6 +1509,12 @@ test("Bluesky replies", async (t) => {
 		url: "https://bsky.app/profile/hidden.example/post/ddd",
 		private: true,
 		date: new Date("2024-12-05T17:00:00.000Z"),
+	}, {
+		id: labeled.uri,
+		parentId: 0,
+		url: "https://bsky.app/profile/labeled.example/post/eee",
+		private: true,
+		date: new Date("2024-12-05T18:00:00.000Z"),
 	}]);
 });
 
@@ -1557,16 +1571,13 @@ test("Fediverse replies", async (t) => {
 	});
 
 	let [entry] = await importer.getEntries();
-	let [first, second, unlisted, noindex] = entry.comments;
+	let [first, warning, unlisted, noindex] = entry.comments;
 	assert.deepEqual([first.id, first.parentId, first.author.name], ["222", 0, "jane@mastodon.social"]);
 	assert.equal(first.content, "<p>Hi!</p>");
-	assert.equal(first.summary, undefined);
 	assert.equal(first.author.avatarUrl, "https://mastodon.social/avatar.png");
 
-	// Content warning
-	assert.deepEqual([second.id, second.parentId, second.summary, second.content], ["333", "222", "Spoilers", "<p>Hey</p>"]);
-
 	// Links only
+	assert.deepEqual(warning, { id: "333", parentId: "222", url: "https://fosstodon.org/@eleventy/333", private: true, date: new Date("2024-01-03T00:00:00.000Z") });
 	assert.deepEqual(unlisted, { id: "444", parentId: 0, url: "https://mastodon.social/@quiet/444", private: true, date: new Date("2024-01-04T00:00:00.000Z") });
 	assert.deepEqual(noindex, { id: "555", parentId: 0, url: "https://mastodon.social/@noindex/555", private: true, date: new Date("2024-01-05T00:00:00.000Z") });
 });

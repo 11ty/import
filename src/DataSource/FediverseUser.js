@@ -51,9 +51,9 @@ export class FediverseUser extends Rss {
 		return obj;
 	}
 
-	// Unlisted replies and authors that opted out of search engines are links only
+	// Unlisted replies, content warnings, and authors that opted out of search engines are links only
 	static isPrivate(status) {
-		return status.visibility === "unlisted" || Boolean(status.account?.noindex);
+		return status.visibility === "unlisted" || Boolean(status.sensitive || status.spoiler_text || status.account?.noindex);
 	}
 
 	static cleanComment(status, rootId) {
@@ -68,7 +68,6 @@ export class FediverseUser extends Rss {
 			},
 			date: new Date(Date.parse(status.created_at)),
 			content: status.content,
-			summary: status.spoiler_text,
 			isPrivate: FediverseUser.isPrivate(status),
 		});
 	}

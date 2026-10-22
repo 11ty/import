@@ -65,8 +65,8 @@ class DataSource {
 	}
 
 	// Shared comment shape: `parentId` is 0 for top-level comments and `content` is HTML
-	// Private comments (the author opted out of wider distribution) are links only
-	static cleanComment({ id, parentId, url, author = {}, date, content, summary, isPrivate = false }) {
+	// Private comments (the author opted out of wider distribution or added a content warning) are links only
+	static cleanComment({ id, parentId, url, author = {}, date, content, isPrivate = false }) {
 		let comment = {
 			id,
 			parentId: parentId || 0,
@@ -83,10 +83,6 @@ class DataSource {
 
 		comment.author = Object.fromEntries(Object.entries(author).filter(([key, value]) => value));
 		comment.date = date;
-		// Content warning
-		if(summary) {
-			comment.summary = summary;
-		}
 		comment.content = content || "";
 		return comment;
 	}

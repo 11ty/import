@@ -48,8 +48,9 @@ export class BlueskyUser extends Rss {
 		return `https://bsky.app/profile/${post.author.handle}/post/${rkey}`;
 	}
 
+	// Post labels are content warnings (e.g. `nudity`, `graphic-media`)
 	static isPrivate(post) {
-		return (post.author?.labels || []).some(label => label.val === BlueskyUser.NO_UNAUTHENTICATED_LABEL);
+		return post.labels?.length > 0 || (post.author?.labels || []).some(label => label.val === BlueskyUser.NO_UNAUTHENTICATED_LABEL);
 	}
 
 	// Flattens the reply tree (blocked or deleted replies don’t have a `post`)
