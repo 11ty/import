@@ -58,9 +58,8 @@ export class YouTubeUser extends DataSource {
 			],
 			date: created,
 			dateUpdated: updated,
-			// TODO linkify, nl2br
-			content: rawEntry['media:group']['media:description'],
-			contentType: "text",
+			content: DataSource.textToParagraphs(String(rawEntry['media:group']?.['media:description'] ?? "")),
+			contentType: "html",
 			...(featuredImage ? { metadata: { media: { featuredImage } } } : {}),
 		}
 	}

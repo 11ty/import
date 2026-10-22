@@ -14,6 +14,7 @@ class DataSource {
 
 	#fetcher;
 	#includeComments = true;
+	#includeContent = true;
 	#fetchDataOverrides = {};
 	#outputFolder = ".";
 
@@ -51,7 +52,16 @@ class DataSource {
 	}
 
 	shouldIncludeComments() {
-		return this.constructor.SUPPORTS_COMMENTS && this.#includeComments;
+		return this.constructor.SUPPORTS_COMMENTS && this.#includeComments && this.#includeContent;
+	}
+
+	// Front matter only, no content or comments (e.g. for cross links)
+	setContent(includeContent) {
+		this.#includeContent = Boolean(includeContent);
+	}
+
+	shouldIncludeContent() {
+		return this.#includeContent;
 	}
 
 	// Comments are optional, so failed requests are logged and skipped
@@ -96,6 +106,21 @@ class DataSource {
 	// HTML from plain text comments
 	static textToHtml(text) {
 		return DataSource.nl2br(entities.escapeUTF8(text || ""));
+	}
+
+	// Escaped HTML from plain text with bare URLs turned into links
+	static linkify(text) {
+		return (text || "").split(/(https?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]}'])/).map((part, index) => {
+			let escaped = entities.escapeUTF8(part);
+			return index % 2 ? `<a href="${escaped}">${escaped}</a>` : escaped;
+		}).join("");
+	}
+
+	// HTML paragraphs from plain text (e.g. a video description)
+	static textToParagraphs(text) {
+		return (text || "").split(/(?:\r?\n){2,}/).map(paragraph => paragraph.trim()).filter(Boolean).map(paragraph => {
+			return `<p>${DataSource.nl2br(DataSource.linkify(paragraph))}</p>`;
+		}).join("\n");
 	}
 
 	setLabel(label) {

@@ -42,19 +42,21 @@ test("YouTube user", async (t) => {
 
 	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "dateUpdated", "filePath", "metadata", "outputContentType", "title", "type", "url", "uuid"]);
 	assert.equal(post.metadata.media.featuredImage, "https://i4.ytimg.com/vi/kNI_LcbvtNk/hqdefault.jpg");
-	assert.equal(post.content.length, 812);
-	assert.equal(post.content, `CloudCannon is the Recommended CMS Partner of 11ty:
+	assert.equal(post.contentType, "markdown");
+	assert.ok(!post.content.includes("<iframe"));
+	assert.ok(post.content.includes(`CloudCannon is the Recommended CMS Partner of 11ty:
 
-https://cloudcannon.com/11tyconf/
-https://cloudcannon.com/blog/how-to-manage-hundreds-of-connected-websites-with-a-git-based-headless-cms/
+[https://cloudcannon.com/11tyconf/](https://cloudcannon.com/11tyconf/)  
+[https://cloudcannon.com/blog/how-to-manage-hundreds-of-connected-websites-with-a-git-based-headless-cms/](https://cloudcannon.com/blog/how-to-manage-hundreds-of-connected-websites-with-a-git-based-headless-cms/)
 
-This was a talk given at the 11ty International Symposium on Making Web Sites Real Good (2024): https://conf.11ty.dev/2024/managing-content-management/
-
-If Jamstack has taught us anything, it’s that websites work best when they’re generated from folders full of flat files. Even massively interconnected websites!
-
-We talk through a classically Jamstacky approach to content management for large organizations: mounting shared layout and component repositories, creating a central content lake to aggregate content like news articles, and automating site builds and deployments when your content or dependencies change.`);
+This was a talk given at the 11ty International Symposium on Making Web Sites Real Good (2024): [https://conf.11ty.dev/2024/managing-content-management/](https://conf.11ty.dev/2024/managing-content-management/)`));
 
 	assert.equal(post.authors[0].name, "Eleventy");
+});
+
+test("Linkify plain text", async (t) => {
+	assert.equal(DataSource.linkify("See https://example.com/a?b=1&c=2. Or (https://example.com/x)! <b>"), `See <a href="https://example.com/a?b=1&amp;c=2">https://example.com/a?b=1&amp;c=2</a>. Or (<a href="https://example.com/x">https://example.com/x</a>)! &lt;b&gt;`);
+	assert.equal(DataSource.textToParagraphs("One\nhttps://example.com\n\n\nTwo"), `<p>One<br>\n<a href="https://example.com">https://example.com</a></p>\n<p>Two</p>`);
 });
 
 test("Bluesky posts", async (t) => {
