@@ -36,6 +36,24 @@ import pkg from "../package.json" with { type: "json" };
 const MAX_IMPORT_SIZE_DEFAULT = 0;
 
 class Importer {
+	// Service names that map to another source type, with an optional target transform
+	static ALIASES = {
+		buttondown: {
+			type: "rss",
+			// Username or newsletter URL (custom domains too)
+			getTarget(target) {
+				if(target.startsWith("https://") || target.startsWith("http://")) {
+					let url = new URL(target);
+					if(!url.pathname.endsWith("/rss")) {
+						url.pathname = url.pathname.replace(/\/?$/, "/rss");
+					}
+					return url.toString();
+				}
+				return `https://buttondown.com/${target.replace(/^@/, "")}/rss`;
+			},
+		},
+	};
+
 	#draftsFolder = "drafts";
 	#outputFolder = ".";
 	#assetReferenceType;
@@ -178,8 +196,14 @@ class Importer {
 
 	addSource(type, options = {}) {
 		let cls;
+		let alias;
 		if(typeof type === "string") {
 			type = type?.toLowerCase();
+
+			alias = Importer.ALIASES[type];
+			if(alias) {
+				type = alias.type;
+			}
 
 			if(type === "youtubeuser") {
 				cls = YouTubeUser;
@@ -234,6 +258,10 @@ class Importer {
 			filepathFormat = options.filepathFormat;
 			postTypes = options.postTypes;
 			comments = options.comments;
+		}
+
+		if(alias?.getTarget && identifier) {
+			identifier = alias.getTarget(identifier);
 		}
 
 		let source = new cls(identifier);

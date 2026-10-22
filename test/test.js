@@ -13,6 +13,7 @@ import { HtmlTransformer } from "../src/HtmlTransformer.js";
 import { MarkdownToHtml } from "../src/MarkdownToHtml.js";
 import { WordPressApi } from "../src/DataSource/WordPressApi.js";
 import { Squarespace } from "../src/DataSource/Squarespace.js";
+import { Rss } from "../src/DataSource/Rss.js";
 import { Archive } from "../src/Archive.js";
 
 function cleanContent(content) {
@@ -624,6 +625,25 @@ test("postTypes is not supported by other source types", async (t) => {
 	assert.throws(() => {
 		importer.addSource("rss", { url: "https://example.com/feed.xml", postTypes: "pages" });
 	});
+});
+
+test("Buttondown alias uses the RSS source", async (t) => {
+	let importer = new Importer();
+	importer.setVerbose(false);
+
+	importer.addSource("buttondown", "zachleat");
+	importer.addSource("Buttondown", "@zachleat");
+	importer.addSource("buttondown", "https://newsletter.example.com");
+	importer.addSource("buttondown", { url: "https://buttondown.com/zachleat/rss" });
+
+	let sources = importer.getSources();
+	assert.ok(sources.every(source => source instanceof Rss));
+	assert.deepEqual(sources.map(source => source.getUrl()), [
+		"https://buttondown.com/zachleat/rss",
+		"https://buttondown.com/zachleat/rss",
+		"https://newsletter.example.com/rss",
+		"https://buttondown.com/zachleat/rss",
+	]);
 });
 
 test("addSource using DataSource", async (t) => {

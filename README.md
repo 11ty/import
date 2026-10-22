@@ -142,6 +142,17 @@ npx @11ty/import atom https://github.com/11ty/eleventy/releases.atom
 npx @11ty/import rss https://fosstodon.org/users/eleventy.rss
 ```
 
+#### Aliases
+
+Some services are aliases for another source type.
+
+- `buttondown` (username or newsletter URL, custom domains too): `rss`
+
+```sh
+# Import public Buttondown archive posts (via RSS)
+npx @11ty/import buttondown zachleat
+```
+
 #### Fediverse
 
 ```sh
