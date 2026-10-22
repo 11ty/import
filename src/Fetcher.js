@@ -228,6 +228,11 @@ class Fetcher {
 		});
 	}
 
+	// For expected errors (e.g. paging past the last page)
+	clearError(url) {
+		this.errors.delete(url);
+	}
+
 	async fetch(url, options = {}, verbosity = {}) {
 		let { verbose, showErrors } = Object.assign({
 			verbose: true, // whether to log the initial fetch request

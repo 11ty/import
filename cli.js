@@ -127,9 +127,6 @@ if(help) {
 
   # WordPress post types to import (default: posts,pages)
   npx @11ty/import wordpress [target] --posttypes=posts,pages,product
-
-  # WordPress.com site using a custom domain
-  npx @11ty/import wordpress-hosted [target]
 `);
 
 	process.exit();

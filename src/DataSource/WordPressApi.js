@@ -1,9 +1,6 @@
 import { DateCompare } from "@11ty/eleventy-utils";
-import * as entities from "entities";
-import striptags from "striptags";
 
 import { DataSource } from "../DataSource.js";
-import { HostedWordPressApi } from "./HostedWordPressApi.js"
 
 // Load WORDPRESS_USERNAME and WORDPRESS_PASSWORD from an optional .env file
 try {
@@ -20,17 +17,78 @@ export class WordPressApi extends DataSource {
 	static IGNORED_CATEGORIES = ["Uncategorized"];
 	static DEFAULT_POST_TYPES = ["posts", "pages"];
 	static BUILTIN_REST_BASES = ["posts", "pages"];
+	static WORDPRESSDOTCOM_API = "https://public-api.wordpress.com/wp/v2/sites/";
 
 	#postTypes = WordPressApi.DEFAULT_POST_TYPES;
 	#restBase = "posts";
+	#apiRoot;
+	#types;
 
 	constructor(url) {
-		if(HostedWordPressApi.isValid(url)) {
-			return new HostedWordPressApi(url);
-		}
-
 		super();
 		this.url = url;
+	}
+
+	static #getRouteUrl(apiRoot, route, query = "") {
+		return `${apiRoot.prefix}${route}${query ? `${apiRoot.separator}${query}` : ""}`;
+	}
+
+	#getApiRootCandidates() {
+		let { origin, pathname, hostname } = new URL(this.url);
+		if(!pathname.endsWith("/")) {
+			pathname += "/";
+		}
+
+		let site = [
+			{ prefix: `${origin}${pathname}wp-json/wp/v2/`, separator: "?" },
+			// Sites without pretty permalinks
+			{ prefix: `${origin}${pathname}?rest_route=/wp/v2/`, separator: "&" },
+		];
+
+		// Also serves WordPress.com sites (custom domains too) and Jetpack-connected sites
+		let wordpressDotCom = { prefix: `${WordPressApi.WORDPRESSDOTCOM_API}${hostname}/`, separator: "?", isWordPressDotCom: true };
+
+		// WordPress.com drafts require the WordPress.com API
+		if(process.env.WORDPRESSDOTCOM_TOKEN) {
+			return [wordpressDotCom, ...site];
+		}
+
+		return [...site, wordpressDotCom];
+	}
+
+	// Uses the first API that returns post types
+	async #discoverApiRoot() {
+		if(this.#apiRoot) {
+			return;
+		}
+
+		for(let candidate of this.#getApiRootCandidates()) {
+			// getHeaders() depends on the candidate
+			this.#apiRoot = candidate;
+
+			let url = WordPressApi.#getRouteUrl(candidate, "types/");
+			try {
+				let types = await this.getData(url, this.getType(), false);
+				if(types?.post) {
+					this.#types = types;
+					return;
+				}
+			} catch(e) {
+				// Expected while discovering
+				this.fetcher.clearError(url);
+			}
+		}
+
+		this.#apiRoot = undefined;
+		throw new Error(`Could not find a WordPress REST API for ${this.url}`);
+	}
+
+	#canRequestDrafts() {
+		if(this.#apiRoot?.isWordPressDotCom) {
+			return Boolean(process.env.WORDPRESSDOTCOM_TOKEN);
+		}
+
+		return Boolean(process.env.WORDPRESS_USERNAME && process.env.WORDPRESS_PASSWORD);
 	}
 
 	// Accepts post type slugs (`page`, `product`) or REST bases (`pages`, `products`)
@@ -47,15 +105,9 @@ export class WordPressApi extends DataSource {
 		return this.#postTypes;
 	}
 
-	async #getRestBases() {
+	#getRestBases() {
 		let builtins = { post: "posts", page: "pages" };
-		let unknown = this.#postTypes.filter(type => !WordPressApi.BUILTIN_REST_BASES.includes(type) && !builtins[type]);
-
-		let types = {};
-		if(unknown.length > 0) {
-			// Warning: extra API call
-			types = await this.getData(this.#getSubtypeUrl("types"), this.getType()) || {};
-		}
+		let types = this.#types || {};
 
 		let restBases = this.#postTypes.map(type => {
 			if(builtins[type]) {
@@ -75,8 +127,10 @@ export class WordPressApi extends DataSource {
 	}
 
 	async getEntries() {
+		await this.#discoverApiRoot();
+
 		let entries = [];
-		for(let restBase of await this.#getRestBases()) {
+		for(let restBase of this.#getRestBases()) {
 			this.#restBase = restBase;
 			entries.push(...await super.getEntries());
 		}
@@ -117,9 +171,8 @@ export class WordPressApi extends DataSource {
 		return "json";
 	}
 
-	#getSubtypeUrl(subtype, suffix = "") {
-		let {pathname} = new URL(this.url);
-		return (new URL(pathname + `wp-json/wp/v2/${subtype}/${suffix}`, this.url)).toString();
+	#getSubtypeUrl(subtype, suffix = "", query = "") {
+		return WordPressApi.#getRouteUrl(this.#apiRoot, `${subtype}/${suffix}`, query);
 	}
 
 	#getAuthorUrl(id) {
@@ -149,17 +202,28 @@ export class WordPressApi extends DataSource {
 
 			let statusStr = "";
 			// Only request Drafts if auth’d
-			if(process.env.WORDPRESS_USERNAME && process.env.WORDPRESS_PASSWORD) {
+			if(this.#canRequestDrafts()) {
 				// Commas are encoded
 				statusStr = `&status=${encodeURIComponent("publish,draft")}`;
 			}
 
-			// Embeds featured media so self-hosted sites without Jetpack can return a featured image
-			return this.#getSubtypeUrl(this.#restBase, `?page=${pageNumber}&per_page=100&_embed=${encodeURIComponent("wp:featuredmedia")}${statusStr}${withinStr}`);
+			// Embeds featured media (for sites without Jetpack) and authors (the WordPress.com users endpoint requires auth)
+			return this.#getSubtypeUrl(this.#restBase, "", `page=${pageNumber}&per_page=100&_embed=${encodeURIComponent("author,wp:featuredmedia")}${statusStr}${withinStr}`);
 		};
 	}
 
 	getHeaders() {
+		if(this.#apiRoot?.isWordPressDotCom) {
+			if(process.env.WORDPRESSDOTCOM_TOKEN) {
+				// OAuth2 access token, see https://developer.wordpress.com/docs/oauth2/
+				return {
+					"Authorization": `Bearer ${process.env.WORDPRESSDOTCOM_TOKEN}`,
+				};
+			}
+
+			return {};
+		}
+
 		if(process.env.WORDPRESS_USERNAME && process.env.WORDPRESS_PASSWORD) {
 			return {
 				"Content-Type": "application/json",
@@ -187,10 +251,16 @@ export class WordPressApi extends DataSource {
 	}
 
 	// stock WordPress is single-author
-	async #getAuthors(authorId) {
+	async #getAuthors(rawEntry) {
+		let [embeddedAuthor] = rawEntry._embedded?.author || [];
+		// An embedded error (e.g. a private user) would fail the same way when fetched
+		if(embeddedAuthor && !embeddedAuthor.name || !embeddedAuthor && !rawEntry.author) {
+			return [];
+		}
+
 		try {
-			// Warning: extra API call
-			let authorData = await this.getData(this.#getAuthorUrl(authorId), this.getType());
+			// Warning: extra API call when not embedded
+			let authorData = embeddedAuthor || await this.getData(this.#getAuthorUrl(rawEntry.author), this.getType());
 
 			let author = {
 				// _wordpress_author_id: entry.author,
@@ -246,12 +316,7 @@ export class WordPressApi extends DataSource {
 
 	// Prefers a Yoast meta description over the (often auto-generated) excerpt
 	static getDescription(rawEntry) {
-		let html = rawEntry.yoast_head_json?.description || rawEntry.yoast_head_json?.og_description || rawEntry.excerpt?.rendered;
-		if(!html) {
-			return;
-		}
-
-		return entities.decodeHTML(striptags(html)).replace(/\s+/g, " ").trim() || undefined;
+		return DataSource.htmlToPlainText(rawEntry.yoast_head_json?.description || rawEntry.yoast_head_json?.og_description || rawEntry.excerpt?.rendered);
 	}
 
 	// Supports: Title, Author, Published/Updated Dates
@@ -307,7 +372,7 @@ export class WordPressApi extends DataSource {
 			type: WordPressApi.TYPE,
 			title: rawEntry.title?.rendered,
 			url,
-			authors: await this.#getAuthors(rawEntry.author),
+			authors: await this.#getAuthors(rawEntry),
 			date: created,
 			dateUpdated: updated,
 			content: rawEntry.content?.rendered || "",

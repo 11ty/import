@@ -1,5 +1,6 @@
 import kleur from 'kleur';
 import * as entities from "entities";
+import striptags from "striptags";
 import { DateCompare } from "@11ty/eleventy-utils";
 
 import { Logger } from "./Logger.js";
@@ -108,6 +109,15 @@ class DataSource {
 		return (str + '').replace(/([^>\r\n]?)(\r\n|\n\r|\r|\n)/g, '$1<br>$2');
 	}
 
+	// Plain text (e.g. for a description) from an HTML snippet
+	static htmlToPlainText(html) {
+		if(!html) {
+			return;
+		}
+
+		return entities.decodeHTML(striptags(html)).replace(/\s+/g, " ").trim() || undefined;
+	}
+
 	async getData(url, type, showErrors = true) {
 		if(!this.isValidHttpUrl(url)) {
 			throw new Error("Invalid url: " + url);
@@ -202,6 +212,8 @@ class DataSource {
 						Logger.error(kleur.red(`Error: ${e.message}`), e);
 						throw e;
 					}
+
+					this.#fetcher?.clearError(pagedUrl);
 				}
 			} else if(typeof url === "string" || url instanceof URL) {
 				let data = await this.getData(url, this.getType(), true);
@@ -256,6 +268,11 @@ class DataSource {
 
 			return entry;
 		});
+	}
+
+	// Override to ignore paging errors that just mean there are no more pages
+	async isErrorWorthWorryingAbout(e) {
+		return true;
 	}
 
 	cleanStatus(status) {

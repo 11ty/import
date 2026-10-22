@@ -112,6 +112,7 @@ test("WordPress import", async (t) => {
 
 	importer.addSource("wordpress", "https://blog.fontawesome.com/");
 
+	addWordPressTypes(importer);
 	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 1), require("./sources/blog-awesome-posts.json"));
 	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 2), []);
 	importer.addDataOverride("wordpress", getWordPressPagedUrl("pages", 1), []);
@@ -210,6 +211,7 @@ test("WordPress featured image and description without Jetpack, issue #11", asyn
 		excerpt: { rendered: "" },
 	};
 
+	addWordPressTypes(importer);
 	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 1), [embedded, yoast, bare]);
 	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 2), []);
 	importer.addDataOverride("wordpress", getWordPressPagedUrl("pages", 1), []);
@@ -232,9 +234,18 @@ test("WordPress featured image and description without Jetpack, issue #11", asyn
 	assert.match(Importer.convertEntryToYaml(entries[1]), /^description: Yoast description$/m);
 });
 
+// Used for API discovery
+function addWordPressTypes(importer, types = {}) {
+	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/types/", {
+		post: { slug: "post", rest_base: "posts" },
+		page: { slug: "page", rest_base: "pages" },
+		...types,
+	});
+}
+
 function getWordPressPagedUrl(restBase, pageNumber) {
 	let status = process.env.WORDPRESS_USERNAME ? "&status=publish%2Cdraft" : "";
-	return `https://blog.fontawesome.com/wp-json/wp/v2/${restBase}/?page=${pageNumber}&per_page=100&_embed=wp%3Afeaturedmedia${status}`;
+	return `https://blog.fontawesome.com/wp-json/wp/v2/${restBase}/?page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia${status}`;
 }
 
 test("WordPress pages and custom post types, issue #17", async (t) => {
@@ -273,7 +284,7 @@ test("WordPress pages and custom post types, issue #17", async (t) => {
 		content: undefined,
 	};
 
-	importer.addDataOverride("wordpress", "https://blog.fontawesome.com/wp-json/wp/v2/types/", {
+	addWordPressTypes(importer, {
 		product: { slug: "product", rest_base: "products" },
 	});
 	importer.addDataOverride("wordpress", getWordPressPagedUrl("posts", 1), [post]);
@@ -292,56 +303,132 @@ test("WordPress pages and custom post types, issue #17", async (t) => {
 	assert.equal(entries[2].content, "");
 });
 
-test("Hosted WordPress with a custom domain and post types, issue #16", async (t) => {
+function withEnv(t, env) {
+	let previous = {};
+	for(let [key, value] of Object.entries(env)) {
+		previous[key] = process.env[key];
+		if(value === undefined) {
+			delete process.env[key];
+		} else {
+			process.env[key] = value;
+		}
+	}
+
+	t.after(() => {
+		for(let [key, value] of Object.entries(previous)) {
+			if(value === undefined) {
+				delete process.env[key];
+			} else {
+				process.env[key] = value;
+			}
+		}
+	});
+}
+
+function getWordPressDotComPost() {
+	let [post] = require("./sources/blog-awesome-posts.json");
+	return {
+		...post,
+		guid: { rendered: "https://example.com/?p=1" },
+		link: "https://example.com/2025/06/hello/",
+		categories: [],
+		tags: [],
+		author: 1,
+		_embedded: {
+			author: [{ name: "Zach", slug: "zach", link: "https://example.com/author/zach/", avatar_urls: { "96": "https://example.com/avatar.png" } }],
+		},
+	};
+}
+
+test("WordPress API discovery falls back to WordPress.com, issue #16", async (t) => {
+	withEnv(t, { WORDPRESSDOTCOM_TOKEN: undefined });
+
 	let importer = new Importer();
 
 	importer.setVerbose(false);
 	importer.setDryRun(true);
 	importer.setAssetReferenceType("disabled");
 
-	importer.addSource("wordpress-hosted", {
+	// Site’s own API isn’t stubbed (unavailable)
+	importer.addSource("wordpress", {
 		url: "https://example.com/",
-		postTypes: "posts,pages",
+		postTypes: "posts",
 	});
 
-	let post = {
-		ID: 1,
-		guid: "https://example.com/?p=1",
-		URL: "https://example.com/2025/06/hello/",
-		type: "post",
-		slug: "hello",
-		title: "Hello",
-		content: "<p>Hello</p>",
-		date: "2025-06-11T00:00:00+00:00",
-		modified: "2025-06-11T00:00:00+00:00",
-		status: "publish",
-		author: { name: "Zach", profile_URL: "https://example.com/zach", avatar_URL: "" },
-		categories: { News: {} },
-		tags: {},
-	};
-	let page = {
-		...post,
-		ID: 2,
-		guid: "https://example.com/?page_id=2",
-		URL: "https://example.com/about/",
-		type: "page",
-		slug: "about",
-		title: "About",
-		categories: undefined,
-		tags: undefined,
-	};
-
-	let getUrl = (type, pageNumber) => `https://public-api.wordpress.com/rest/v1.1/sites/example.com/posts/?type=${type}&page=${pageNumber}&number=100`;
-	importer.addDataOverride("wordpressapi-hosted", getUrl("post", 1), { posts: [post] });
-	importer.addDataOverride("wordpressapi-hosted", getUrl("post", 2), { posts: [] });
-	importer.addDataOverride("wordpressapi-hosted", getUrl("page", 1), { posts: [page] });
-	importer.addDataOverride("wordpressapi-hosted", getUrl("page", 2), { posts: [] });
+	let getUrl = pageNumber => `https://public-api.wordpress.com/wp/v2/sites/example.com/posts/?page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia`;
+	importer.addDataOverride("wordpress", "https://public-api.wordpress.com/wp/v2/sites/example.com/types/", { post: { rest_base: "posts" } });
+	importer.addDataOverride("wordpress", getUrl(1), [getWordPressDotComPost()]);
+	importer.addDataOverride("wordpress", getUrl(2), []);
 
 	let entries = await importer.getEntries({ contentType: "html" });
-	assert.deepEqual(entries.map(entry => entry.metadata.postType), ["post", "page"]);
-	assert.deepEqual(entries.map(entry => entry.title), ["Hello", "About"]);
-	assert.deepEqual(entries[0].metadata.categories, ["News"]);
-	assert.deepEqual(entries[1].metadata.categories, []);
+	assert.deepEqual(entries.map(entry => entry.url), ["https://example.com/2025/06/hello/"]);
+	// Embedded, the WordPress.com users endpoint requires auth
+	assert.deepEqual(entries[0].authors, [{ name: "Zach", url: "https://example.com/author/zach/", avatarUrl: "https://example.com/avatar.png", slug: "zach" }]);
+	assert.deepEqual(importer.getSources()[0].getHeaders(), {});
+	assert.equal(importer.getCounts().errors, 0);
+});
+
+test("WordPress API discovery prefers WordPress.com with a token (for drafts)", async (t) => {
+	withEnv(t, { WORDPRESSDOTCOM_TOKEN: "test-token" });
+
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("wordpress", {
+		url: "https://example.com/",
+		postTypes: "posts",
+	});
+
+	let getUrl = pageNumber => `https://public-api.wordpress.com/wp/v2/sites/example.com/posts/?page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia&status=publish%2Cdraft`;
+	// Would be used without a token
+	importer.addDataOverride("wordpress", "https://example.com/wp-json/wp/v2/types/", { post: { rest_base: "posts" } });
+	importer.addDataOverride("wordpress", "https://public-api.wordpress.com/wp/v2/sites/example.com/types/", { post: { rest_base: "posts" } });
+	importer.addDataOverride("wordpress", getUrl(1), [{ ...getWordPressDotComPost(), status: "draft" }]);
+	importer.addDataOverride("wordpress", getUrl(2), []);
+
+	let [entry] = await importer.getEntries({ contentType: "html" });
+	assert.equal(entry.status, "draft");
+	assert.equal(importer.getSources()[0].getHeaders().Authorization, "Bearer test-token");
+});
+
+test("WordPress API discovery supports sites without pretty permalinks", async (t) => {
+	withEnv(t, { WORDPRESSDOTCOM_TOKEN: undefined });
+
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+
+	importer.addSource("wordpress", {
+		url: "https://example.com/blog",
+		postTypes: "posts",
+	});
+
+	let getUrl = pageNumber => `https://example.com/blog/?rest_route=/wp/v2/posts/&page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia`;
+	importer.addDataOverride("wordpress", "https://example.com/blog/?rest_route=/wp/v2/types/", { post: { rest_base: "posts" } });
+	importer.addDataOverride("wordpress", getUrl(1), [getWordPressDotComPost()]);
+	importer.addDataOverride("wordpress", getUrl(2), []);
+
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.equal(entries.length, 1);
+});
+
+test("WordPress API discovery throws when no API is found", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	importer.addSource("wordpress", "https://example.com/");
+	importer.addDataOverride("wordpress", "https://example.com/unused", {});
+
+	await assert.rejects(importer.getEntries({ contentType: "html" }), {
+		message: "Could not find a WordPress REST API for https://example.com/",
+	});
 });
 
 test("Author avatars are downloaded as assets", async (t) => {

@@ -10,7 +10,6 @@ import { Logger } from "./Logger.js";
 import { DirectoryManager } from "./DirectoryManager.js";
 import { Utils } from "./Utils.js";
 import { WordPressApi } from "./DataSource/WordPressApi.js";
-import { HostedWordPressApi } from "./DataSource/HostedWordPressApi.js";
 
 const WORDPRESS_TO_PRISM_LANGUAGE_TRANSLATION = {
 	jscript: "js",
@@ -55,7 +54,7 @@ const DEFAULT_EMBEDS = {
 
 class MarkdownToHtml {
 	#prettierLanguages;
-	#initStarted;
+	#initPromise;
 
 	constructor() {
 		this.assetsToKeep = new Set();
@@ -105,13 +104,15 @@ class MarkdownToHtml {
 		this.embeds.delete(name);
 	}
 
-	async asyncInit() {
-		if(this.#initStarted) {
-			return;
+	// Concurrent callers share one init so none proceed before languages are loaded
+	asyncInit() {
+		if(!this.#initPromise) {
+			this.#initPromise = this.#init();
 		}
+		return this.#initPromise;
+	}
 
-		this.#initStarted = true;
-
+	async #init() {
 		/* Sample output language
 		{
 			language: {
@@ -232,7 +233,7 @@ class MarkdownToHtml {
 
 	getTurndownService(options = {}) {
 		let { filePath, type } = options;
-		let isFromWordPress = type === WordPressApi.TYPE || type === HostedWordPressApi.TYPE;
+		let isFromWordPress = type === WordPressApi.TYPE;
 
 		let ts = new TurndownService({
 			headingStyle: "atx",
