@@ -796,11 +796,8 @@ class Importer {
 	}
 
 	static getFileContent(entry) {
-		// https://www.npmjs.com/package/js-yaml#dump-object---options-
 		// A file object keeps content starting with `---` from being parsed as front matter
-		let toContent = importHash => matter.stringify({ content: entry.content }, Importer.getFrontMatterData(entry, { importHash }), {
-			noCompatMode: true,
-		});
+		let toContent = importHash => matter.stringify({ content: entry.content }, Importer.getFrontMatterData(entry, { importHash }));
 
 		// Hashed the same way getImportHash reads it back
 		let { computed: hash } = Importer.parseImportHash(toContent());
