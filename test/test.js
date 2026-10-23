@@ -7,7 +7,6 @@ import { createRequire } from "node:module";
 
 import { Importer } from "../src/Importer.js";
 import { DataSource } from "../src/DataSource.js";
-import { Persist } from "../src/Persist.js";
 import { Fetcher } from "../src/Fetcher.js";
 import { HtmlTransformer } from "../src/HtmlTransformer.js";
 import { MarkdownToHtml } from "../src/MarkdownToHtml.js";
@@ -836,40 +835,6 @@ test("addSource needs to use DataSource", async (t) => {
 	}, {
 		message: "MySource is not a supported type for addSource(). Requires a string type or a DataSource class."
 	})
-});
-
-test("Persist parseTarget", async (t) => {
-	assert.deepEqual(Persist.parseTarget("github:11ty/eleventy"), {
-		type: "github",
-		username: "11ty",
-		repository: "eleventy",
-		branch: undefined,
-	});
-
-	assert.deepEqual(Persist.parseTarget("github:11ty/eleventy#main"), {
-		type: "github",
-		username: "11ty",
-		repository: "eleventy",
-		branch: "main",
-	});
-});
-
-test("Persist constructor (no token)", async (t) => {
-	let p = new Persist();
-
-	assert.throws(() => p.setTarget("gitlab:11ty/eleventy"), {
-		// message: "Invalid persist type: gitlab"
-		message: "Missing GITHUB_TOKEN environment variable."
-	});
-});
-
-test("Persist constructor (gitlab)", async (t) => {
-	let p = new Persist();
-	process.env.GITHUB_TOKEN = "FAKE_TOKEN";
-
-	assert.throws(() => p.setTarget("gitlab:11ty/eleventy"), {
-		message: "Invalid persist type: gitlab"
-	});
 });
 
 test("Fetcher asset location tests (relative)", async (t) => {

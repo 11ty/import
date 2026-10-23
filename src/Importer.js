@@ -10,7 +10,6 @@ import { Fetcher } from "./Fetcher.js";
 import { DirectoryManager } from "./DirectoryManager.js";
 import { MarkdownToHtml } from "./MarkdownToHtml.js";
 import { HtmlTransformer } from "./HtmlTransformer.js";
-import { Persist } from "./Persist.js";
 import { Utils } from "./Utils.js";
 
 // Data Sources
@@ -92,13 +91,11 @@ class Importer {
 		this.markdownService = new MarkdownToHtml();
 		this.htmlTransformer = new HtmlTransformer();
 		this.directoryManager = new DirectoryManager();
-		this.persistManager = new Persist();
 		this.fetcher = new Fetcher();
 
 		this.htmlTransformer.setFetcher(this.fetcher);
 
 		this.fetcher.setDirectoryManager(this.directoryManager);
-		this.fetcher.setPersistManager(this.persistManager);
 	}
 
 	// CSS selectors to preserve on markdown conversion
@@ -124,7 +121,6 @@ class Importer {
 			...this.counts,
 			...fetcherCounts,
 			...this.markdownService.getCounts(),
-			...this.persistManager.getCounts(),
 			errors: fetcherCounts.errors + this.#documentErrors,
 		}
 	}
@@ -153,7 +149,6 @@ class Importer {
 
 		this.fetcher.setDryRun(isDryRun);
 		this.directoryManager.setDryRun(isDryRun);
-		this.persistManager.setDryRun(isDryRun);
 	}
 
 	setVerbose(isVerbose) {
@@ -161,7 +156,6 @@ class Importer {
 
 		this.fetcher.setVerbose(isVerbose);
 		this.markdownService.setVerbose(isVerbose);
-		this.persistManager.setVerbose(isVerbose);
 
 		for(let source of this.sources) {
 			source.setVerbose(isVerbose);
@@ -252,20 +246,6 @@ class Importer {
 	// Per-origin p-queue options (e.g. `{ concurrency: 2 }`), replaces a source’s default limit
 	setOriginLimit(origin, options) {
 		this.fetcher.setOriginLimit(origin, options);
-	}
-
-	setPersistTarget(persistTarget) {
-		this.persistManager.setTarget(persistTarget);
-	}
-
-	// `batch` (default, one commit per run) or `file` (one commit per file)
-	setPersistMode(mode) {
-		this.persistManager.setMode(mode);
-	}
-
-	// Writes files queued during toFiles(), returns `{ commits, files, failures }`
-	async persist() {
-		return this.persistManager.flush();
 	}
 
 	addSource(type, options = {}) {
@@ -964,7 +944,6 @@ class Importer {
 			}
 			filepathConflicts[conflictKey] = entry.url || true;
 
-			let files = [];
 			if(!isDataOnly) {
 				let { content, hash } = Importer.getFileContent(entry);
 
@@ -997,8 +976,6 @@ class Importer {
 
 						fs.writeFileSync(pathname, content, { encoding: "utf8" });
 					}
-
-					files.push({ pathname, content, type: "post" });
 				}
 			}
 
@@ -1010,7 +987,6 @@ class Importer {
 			if(commentsContent !== undefined && commentsContent !== existing.raw) {
 				this.#dataFiles.set(commentsPathname, commentsContent);
 				fileContents.set(commentsPathname, commentsContent);
-				files.push({ pathname: commentsPathname, content: commentsContent, type: "comments" });
 
 				if(this.isVerbose) {
 					Logger.importing("comments", commentsPathname, entry.url, {
@@ -1022,18 +998,6 @@ class Importer {
 				if(!this.dryRun) {
 					this.directoryManager.createDirectoryForPath(commentsPathname);
 					fs.writeFileSync(commentsPathname, commentsContent, { encoding: "utf8" });
-				}
-			}
-
-			// Happens independent of file system (--dryrun or --overwrite)
-			// Don’t persist if post is a draft
-			if(entry.status !== "draft" && this.persistManager.canPersist()) {
-				for(let file of files) {
-					await this.persistManager.persistFile(file.pathname, file.content, {
-						url: entry.url,
-						type: file.type,
-						source: entry.type,
-					});
 				}
 			}
 		}
@@ -1115,9 +1079,6 @@ class Importer {
 			content.push(kleur.gray(`(${counts.pruned} pruned, stale)`));
 		}
 		content.push(kleur.green(`from ${sourcesDisplay}`));
-		if(counts.persist) {
-			content.push(kleur.blue(`(${counts.persist} persisted)`));
-		}
 		content.push(kleur[counts.errors > 0 ? "red" : "gray"](`(${counts.errors} ${Logger.plural(counts.errors, "error")})`));
 		if(this.startTime) {
 			content.push(`in ${Logger.time(Date.now() - this.startTime)}`);

@@ -84,9 +84,6 @@ npx @11ty/import wordpress [target] --posttypes=posts,pages,product
 # Import webmention.io webmentions into post data files (requires WEBMENTION_IO_TOKEN)
 npx @11ty/import webmentions example.com
 
-# EXPERIMENTAL: Persist *new* non-draft content
-# - `github` persist type requires a `GITHUB_TOKEN` environment variable.
-npx @11ty/import [type] [target] --persist=github:zachleat/wp-awesome
 ```
 
 ### Service Types

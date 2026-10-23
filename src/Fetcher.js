@@ -35,7 +35,6 @@ class Fetcher {
 	#seenResponses = new WeakSet();
 	#directoryManager;
 	#assetsFolder = "assets";
-	#persistManager;
 	#outputFolder = ".";
 	#downloadAssets = true;
 
@@ -294,10 +293,6 @@ class Fetcher {
 		this.#directoryManager = manager;
 	}
 
-	setPersistManager(manager) {
-		this.#persistManager = manager;
-	}
-
 	// `refType` overrides the asset reference type: relative, colocate, absolute, or disabled (e.g. for avatars)
 	getAssetLocation(assetUrl, assetContentType, contextEntry, refType) {
 		let filename = Fetcher.getFilenameFromSrc(assetUrl, assetContentType);
@@ -382,15 +377,6 @@ class Fetcher {
 				this.counts.assets++;
 
 				fs.writeFileSync(fullOutputLocation, result.body);
-			}
-
-			// Don’t persist (e.g. back to GitHub) assets if upstream post is a draft
-			if(contextEntry.status !== "draft" && this.#persistManager.canPersist()) {
-				this.#persistManager.persistFile(fullOutputLocation, result.body, {
-					assetUrl,
-					type: "asset",
-					source: contextEntry.type,
-				});
 			}
 
 			return urlValue;

@@ -37,10 +37,6 @@ class Logger {
 		this._logFsOperation("Importing", type, local, remote, options);
 	}
 
-	static persisting(type, local, remote, options = {}) {
-		this._logFsOperation("Persisting", type, local, remote, options);
-	}
-
 	static skipping(type, local, remote, options = {}) {
 		this._logFsOperation("Skipping", type, local, remote, options);
 	}

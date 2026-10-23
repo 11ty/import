@@ -59,10 +59,6 @@ let { positionals, values } = parseArgs({
 			type: "string",
 			default: "markdown",
 		},
-		persist: {
-			type: "string",
-			default: "",
-		},
 		assetrefs: {
 			type: "string",
 			default: "relative",
@@ -98,7 +94,7 @@ let { positionals, values } = parseArgs({
 });
 
 let [ type, target ] = positionals;
-let { quiet, dryrun, output, help, version, overwrite, prune, cacheduration, format, persist, assetrefs, avatarrefs, within, preserve, posttypes, limit, until, contentselector } = values;
+let { quiet, dryrun, output, help, version, overwrite, prune, cacheduration, format, assetrefs, avatarrefs, within, preserve, posttypes, limit, until, contentselector } = values;
 
 if(version) {
 	const require = createRequire(import.meta.url);
@@ -234,10 +230,6 @@ if(preserve) {
 	importer.addPreserved(preserve);
 }
 
-if(persist) {
-	importer.setPersistTarget(persist);
-}
-
 importer.setOverwriteAllow(values['overwrite-allow']);
 
 let entries = await importer.getEntries({
@@ -249,11 +241,5 @@ let entries = await importer.getEntries({
 
 await importer.toFiles(entries);
 
-let persistResult = await importer.persist();
-
 importer.logResults();
-
-if(persistResult.failures.length) {
-	process.exitCode = 1;
-}
 
