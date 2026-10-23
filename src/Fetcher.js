@@ -4,7 +4,7 @@ import kleur from "kleur";
 import { XMLParser } from "fast-xml-parser";
 import PQueue from "p-queue";
 
-import EleventyFetch from "@11ty/eleventy-fetch";
+import EleventyFetch, { createFetch } from "@11ty/eleventy-fetch";
 import { DirectoryManager } from "./DirectoryManager.js";
 import { Logger } from "./Logger.js";
 import { Utils } from "./Utils.js";
@@ -29,6 +29,10 @@ class Fetcher {
 	#retries = 2;
 	#retryDelay = 1000;
 	#originQueues = new Map();
+	// Origin to the timestamp its requests wait for (rate limits)
+	#originPauses = new Map();
+	// Eleventy Fetch returns the same response object for repeated requests in a process
+	#seenResponses = new WeakSet();
 	#directoryManager;
 	#assetsFolder = "assets";
 	#persistManager;
@@ -37,6 +41,12 @@ class Fetcher {
 
 	static USER_AGENT = "Eleventy Import v1.0.0";
 	static RETRY_STATUSES = [408, 429, 500, 502, 503, 504];
+	// Longest wait for a rate limit (Mastodon uses 5 minute windows)
+	static MAX_RETRY_DELAY = 5 * 60 * 1000;
+	// Requests are spread out until the reset once `x-ratelimit-remaining` drops to this fraction of `x-ratelimit-limit`
+	static RATE_LIMIT_LOW = 0.1;
+	// Only longer waits are logged
+	static LOG_WAIT_MINIMUM = 10 * 1000;
 
 	static getContextPathname(url) {
 		if(url) {
@@ -96,14 +106,45 @@ class Fetcher {
 		return cause?.name === "TimeoutError" || cause instanceof TypeError;
 	}
 
-	// `Retry-After` (seconds or a date), otherwise exponential backoff with jitter
-	static getRetryDelay(error, attempt, baseDelay) {
-		let retryAfter = error?.cause?.headers?.get?.("retry-after");
+	// Plain object (cached response metadata) or `Headers`
+	static getHeader(headers, name) {
+		return typeof headers?.get === "function" ? headers.get(name) : headers?.[name];
+	}
+
+	// Milliseconds until `x-ratelimit-reset`: an ISO date (Mastodon), epoch seconds (GitHub), or seconds from now
+	static getRateLimitResetDelay(headers) {
+		let reset = Fetcher.getHeader(headers, "x-ratelimit-reset");
+		if(!reset) {
+			return;
+		}
+
+		let delay;
+		if(/^\d+(\.\d+)?$/.test(reset)) {
+			let seconds = Number(reset);
+			delay = seconds > 1e9 ? seconds * 1000 - Date.now() : seconds * 1000;
+		} else {
+			delay = Date.parse(reset) - Date.now();
+		}
+
+		return delay > 0 ? delay : undefined;
+	}
+
+	// `Retry-After` (seconds or a date) or `x-ratelimit-reset` on a 429 (capped), otherwise exponential backoff with jitter
+	static getRetryDelay(error, attempt, baseDelay, maxDelay = Fetcher.MAX_RETRY_DELAY) {
+		let headers = error?.cause?.headers;
+		let retryAfter = Fetcher.getHeader(headers, "retry-after");
+		let delay;
 		if(retryAfter) {
 			let seconds = Number(retryAfter) || (Date.parse(retryAfter) - Date.now()) / 1000;
 			if(seconds > 0) {
-				return seconds * 1000;
+				delay = seconds * 1000;
 			}
+		}
+		if(!delay && error?.cause?.status === 429) {
+			delay = Fetcher.getRateLimitResetDelay(headers);
+		}
+		if(delay) {
+			return Math.min(delay, maxDelay);
 		}
 		return baseDelay * 2 ** attempt + Math.random() * baseDelay / 4;
 	}
@@ -179,9 +220,69 @@ class Fetcher {
 		this.#originQueues.set(new URL(origin).origin, new PQueue(options));
 	}
 
-	#queue(url, fn) {
-		let queue = this.#originQueues.get(new URL(url).origin);
-		return queue ? queue.add(fn) : fn();
+	hasOriginLimit(origin) {
+		return this.#originQueues.has(new URL(origin).origin);
+	}
+
+	// Cache hits skip the queue
+	#queue(url, opts) {
+		let request = () => EleventyFetch(url, opts);
+		if(this.#isCached(url, opts)) {
+			return request();
+		}
+
+		let origin = new URL(url).origin;
+		let task = () => this.#waitForOrigin(origin).then(request);
+		let queue = this.#originQueues.get(origin);
+		return queue ? queue.add(task) : task();
+	}
+
+	#isCached(url, opts) {
+		let instance = createFetch(url, opts);
+		if(typeof instance?.isCacheValid !== "function") {
+			// Invalid sources return a rejected promise, the error is thrown by the request instead
+			instance?.catch?.(() => {});
+			return false;
+		}
+		return instance.isCacheValid();
+	}
+
+	async #waitForOrigin(origin) {
+		let delay = (this.#originPauses.get(origin) || 0) - Date.now();
+		if(delay > 0) {
+			await new Promise(resolve => setTimeout(resolve, delay));
+		}
+	}
+
+	// Pauses all requests to an origin, returns whether it was extended by at least a second (for logging)
+	#pauseOrigin(origin, delay) {
+		let until = Date.now() + delay;
+		let current = this.#originPauses.get(origin) || Date.now();
+		if(until > current) {
+			this.#originPauses.set(origin, until);
+		}
+		return until - current >= 1000;
+	}
+
+	#logWait(origin, delay, reason) {
+		if(this.isVerbose) {
+			Logger.log(kleur.yellow(`${reason}, waiting ${Math.ceil(delay / 1000)}s`), origin);
+		}
+	}
+
+	// Spreads out the remaining requests until the reset
+	#slowDown(origin, headers) {
+		let remaining = Number(Fetcher.getHeader(headers, "x-ratelimit-remaining"));
+		let limit = Number(Fetcher.getHeader(headers, "x-ratelimit-limit"));
+		let resetDelay = Fetcher.getRateLimitResetDelay(headers);
+		if(!Number.isFinite(remaining) || !limit || !resetDelay || remaining > limit * Fetcher.RATE_LIMIT_LOW) {
+			return;
+		}
+
+		let delay = Math.min(resetDelay / (remaining + 1), Fetcher.MAX_RETRY_DELAY);
+		if(this.#pauseOrigin(origin, delay) && delay >= Fetcher.LOG_WAIT_MINIMUM) {
+			this.#logWait(origin, delay, `Rate limit almost reached (${remaining} of ${limit} remaining)`);
+		}
 	}
 
 	// Milliseconds before the first retry, doubled for each one after
@@ -341,11 +442,20 @@ class Fetcher {
 		this.fetchedUrls.add(url);
 
 		let isGet = !opts.fetchOptions.method || opts.fetchOptions.method.toUpperCase() === "GET";
+		let returnResponse = opts.returnType === "response";
+		// Headers are needed for rate limits
+		opts.returnType = "response";
+		let origin = new URL(url).origin;
 		for(let attempt = 0; ; attempt++) {
 			try {
 				// Retry delays happen outside of the queue
-				let result = await this.#queue(url, () => EleventyFetch(url, opts));
-				return opts.type === "xml" ? Fetcher.parseXml(result) : result;
+				let result = await this.#queue(url, opts);
+				if(result.cache === "miss" && !this.#seenResponses.has(result)) {
+					this.#seenResponses.add(result);
+					this.#slowDown(origin, result.headers);
+				}
+				let body = returnResponse ? result : result.body;
+				return opts.type === "xml" ? Fetcher.parseXml(body) : body;
 			} catch(error) {
 				if(!isGet || attempt >= retries || !Fetcher.isRetryable(error)) {
 					this.#logError(url, logUrl, error, showErrors);
@@ -353,7 +463,12 @@ class Fetcher {
 				}
 
 				let delay = Fetcher.getRetryDelay(error, attempt, retryDelay);
-				if(this.isVerbose && verbose) {
+				if(error.cause?.status === 429) {
+					// Other requests to the origin wait too
+					if(this.#pauseOrigin(origin, delay)) {
+						this.#logWait(origin, delay, "Rate limited (429)");
+					}
+				} else if(this.isVerbose && verbose) {
 					Logger.log(kleur.gray(`Retrying in ${Math.ceil(delay / 1000)}s`), logUrl, kleur.gray(error.message.split(url).join(logUrl)));
 				}
 				await new Promise(resolve => setTimeout(resolve, delay));

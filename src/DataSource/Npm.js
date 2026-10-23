@@ -8,6 +8,7 @@ import { DataSource } from "../DataSource.js";
 export class Npm extends DataSource {
 	static TYPE = "npm";
 	static TYPE_FRIENDLY = "npm";
+	static DECODE_HTML = false;
 	static REGISTRY = "https://registry.npmjs.org";
 	static WEBSITE = "https://www.npmjs.com";
 	static MISSING_README = "ERROR: No README data found!";

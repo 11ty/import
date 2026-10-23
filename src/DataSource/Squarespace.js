@@ -4,6 +4,7 @@ import { DataSource } from "../DataSource.js";
 export class Squarespace extends DataSource {
 	static TYPE = "squarespace";
 	static TYPE_FRIENDLY = "Squarespace";
+	static DECODE_HTML = false;
 	static ASSET_HOSTS = ["images.squarespace-cdn.com", "static1.squarespace.com"];
 	static SUPPORTS_COMMENTS = true;
 	static APPROVED_COMMENT_STATUS = 1;

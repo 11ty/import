@@ -8,6 +8,7 @@ import { Logger } from "../Logger.js";
 export class WaybackMachine extends DataSource {
 	static TYPE = "wayback";
 	static TYPE_FRIENDLY = "Wayback Machine";
+	static DECODE_HTML = false;
 	static HOST = "https://web.archive.org";
 	static FIELDS = ["urlkey", "timestamp", "original"];
 	static PER_PAGE = 5000;
@@ -151,7 +152,9 @@ export class WaybackMachine extends DataSource {
 	// Bursts of requests (e.g. archived assets) are rate limited
 	setFetcher(fetcher) {
 		super.setFetcher(fetcher);
-		fetcher.setOriginLimit(WaybackMachine.HOST, { concurrency: WaybackMachine.CONCURRENCY });
+		if(!fetcher.hasOriginLimit(WaybackMachine.HOST)) {
+			fetcher.setOriginLimit(WaybackMachine.HOST, { concurrency: WaybackMachine.CONCURRENCY });
+		}
 	}
 
 	// The Wayback Machine is often slow to respond

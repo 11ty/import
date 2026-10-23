@@ -14,6 +14,7 @@ import { MarkdownToHtml } from "../src/MarkdownToHtml.js";
 import { WordPressApi } from "../src/DataSource/WordPressApi.js";
 import { Squarespace } from "../src/DataSource/Squarespace.js";
 import { Rss } from "../src/DataSource/Rss.js";
+import { BlueskyUser } from "../src/DataSource/BlueskyUser.js";
 import { Npm } from "../src/DataSource/Npm.js";
 import { GitHub } from "../src/DataSource/GitHub.js";
 import { GitHubGist } from "../src/DataSource/GitHubGist.js";
@@ -63,6 +64,12 @@ test("Linkify plain text", async (t) => {
 	assert.equal(DataSource.textToParagraphs("One\nhttps://example.com\n\n\nTwo"), `<p>One<br>\n<a href="https://example.com">https://example.com</a></p>\n<p>Two</p>`);
 });
 
+const BLUESKY_FEED_URL = "https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=zachleat.com&filter=posts_and_author_threads&limit=100";
+
+function getBlueskyFeed() {
+	return JSON.parse(fs.readFileSync("./test/sources/bluesky-feed.json", "utf8"));
+}
+
 test("Bluesky posts", async (t) => {
 	let importer = new Importer();
 
@@ -71,9 +78,7 @@ test("Bluesky posts", async (t) => {
 
 	importer.addSource("bluesky", "zachleat.com");
 
-	let stubContent = fs.readFileSync("./test/sources/bluesky-test.xml");
-
-	importer.addDataOverride("bluesky", "https://bsky.app/profile/zachleat.com/rss", Fetcher.parseXml(stubContent.toString("utf8")));
+	importer.addDataOverride("bluesky", BLUESKY_FEED_URL, getBlueskyFeed());
 
 	let entries = await importer.getEntries({ contentType: "markdown" });
 	assert.equal(entries.length, 1);
@@ -81,20 +86,21 @@ test("Bluesky posts", async (t) => {
 	let [post] = entries;
 
 	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "filePath", "metadata", "outputContentType", "title", "type", "url", "uuid"]);
+	assert.equal(post.uuid, "11ty/import::rss::at://did:plc:xpchjovbk6sxl3bv74z7cs54/app.bsky.feed.post/3lckusgtkuk2r");
 	assert.equal(post.metadata.slug, post.url.split("/").pop());
-	assert.equal(post.content.length, 323);
 	assert.equal(post.content, `time to review my HTML wrapped 2024
 
-Most used: &lt;a&gt;
-Doing work to reduce infrastructure bills: &lt;picture&gt;
-Underrated: &lt;output&gt;
-Misunderstood: &lt;details&gt;
-Tame but a small win: &lt;search&gt;
-Hope the design never calls for it: &lt;dialog&gt;
-Not today Satan: &lt;canvas&gt;
-Pure vibes: &lt;noscript&gt;`);
+Most used: \\<a>  
+Doing work to reduce infrastructure bills: \\<picture>  
+Underrated: \\<output>  
+Misunderstood: \\<details>  
+Tame but a small win: \\<search>  
+Hope the design never calls for it: \\<dialog>  
+Not today Satan: \\<canvas>  
+Pure vibes: \\<noscript>`);
 
-	assert.equal(post.authors[0].name, "@zachleat.com - Zach Leatherman");
+	assert.equal(post.authors[0].name, "Zach Leatherman");
+	assert.equal(post.authors[0].url, "https://bsky.app/profile/zachleat.com");
 });
 
 test("Bluesky self-repost duplicates are deduplicated, issue #7", async (t) => {
@@ -105,11 +111,9 @@ test("Bluesky self-repost duplicates are deduplicated, issue #7", async (t) => {
 
 	importer.addSource("bluesky", "zachleat.com");
 
-	let stubContent = fs.readFileSync("./test/sources/bluesky-test.xml").toString("utf8");
-	let item = stubContent.slice(stubContent.indexOf("<item>"), stubContent.indexOf("</item>") + "</item>".length);
-	stubContent = stubContent.replace(item, item + item);
-
-	importer.addDataOverride("bluesky", "https://bsky.app/profile/zachleat.com/rss", Fetcher.parseXml(stubContent));
+	let feed = getBlueskyFeed();
+	feed.feed.push({ ...feed.feed[0], reason: { $type: "app.bsky.feed.defs#reasonRepost" } });
+	importer.addDataOverride("bluesky", BLUESKY_FEED_URL, feed);
 
 	let entries = await importer.getEntries({ contentType: "markdown" });
 	assert.equal(entries.length, 1);
@@ -124,13 +128,97 @@ test("Skip content (front matter only)", async (t) => {
 	importer.setDryRun(true);
 	importer.addSource("bluesky", { url: "zachleat.com", content: false });
 
-	let stubContent = fs.readFileSync("./test/sources/bluesky-test.xml");
-	importer.addDataOverride("bluesky", "https://bsky.app/profile/zachleat.com/rss", Fetcher.parseXml(stubContent.toString("utf8")));
+	importer.addDataOverride("bluesky", BLUESKY_FEED_URL, getBlueskyFeed());
 
 	let [post] = await importer.getEntries({ contentType: "markdown" });
 	assert.equal(post.content, "");
 	assert.equal(post.url, "https://bsky.app/profile/zachleat.com/post/3lckusgtkuk2r");
-	assert.equal(post.authors[0].name, "@zachleat.com - Zach Leatherman");
+	assert.equal(post.authors[0].name, "Zach Leatherman");
+});
+
+test("Bluesky rich text, embeds, and paging past reposts", async (t) => {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+	importer.addSource("bluesky", { url: "@zachleat.com", comments: false });
+
+	let did = "did:plc:xpchjovbk6sxl3bv74z7cs54";
+	let author = { did, handle: "zachleat.com", displayName: "Zach Leatherman" };
+	let other = { did: "did:plc:jane", handle: "jane.example", displayName: "Jane" };
+	let hidden = { did: "did:plc:hidden", handle: "hidden.example", labels: [{ val: "!no-unauthenticated" }] };
+
+	importer.addDataOverride("bluesky", BLUESKY_FEED_URL, {
+		cursor: "page2",
+		feed: [{ reason: { $type: "app.bsky.feed.defs#reasonRepost" }, post: { uri: "at://did:plc:jane/app.bsky.feed.post/r", author: other, record: { text: "Repost", createdAt: "2024-12-06T00:00:00.000Z" } } }],
+	});
+	importer.addDataOverride("bluesky", `${BLUESKY_FEED_URL}&cursor=page2`, {
+		feed: [{
+			post: {
+				uri: `at://${did}/app.bsky.feed.post/one`,
+				author,
+				record: {
+					text: "Hi @jane.example 🎉 #11ty example.com/long...",
+					createdAt: "2024-12-05T00:00:00.000Z",
+					facets: [
+						{ index: { byteStart: 3, byteEnd: 16 }, features: [{ $type: "app.bsky.richtext.facet#mention", did: "did:plc:jane" }] },
+						{ index: { byteStart: 22, byteEnd: 27 }, features: [{ $type: "app.bsky.richtext.facet#tag", tag: "11ty" }] },
+						{ index: { byteStart: 28, byteEnd: 47 }, features: [{ $type: "app.bsky.richtext.facet#link", uri: "https://example.com/long/url" }] },
+					],
+				},
+				embed: {
+					$type: "app.bsky.embed.recordWithMedia#view",
+					media: { $type: "app.bsky.embed.images#view", images: [{ fullsize: "https://cdn.bsky.app/img/a@jpeg", alt: "Alt" }] },
+					record: { record: {
+						$type: "app.bsky.embed.record#viewRecord",
+						uri: "at://did:plc:jane/app.bsky.feed.post/quoted",
+						author: other,
+						value: { text: "Quoted <b>", createdAt: "2024-12-04T00:00:00.000Z" },
+						embeds: [{ $type: "app.bsky.embed.record#view", record: { $type: "app.bsky.embed.record#viewRecord", uri: "at://did:plc:x/app.bsky.feed.post/nested", author: { handle: "x.example" } } }],
+					} },
+				},
+			},
+		}, {
+			post: {
+				uri: `at://${did}/app.bsky.feed.post/two`,
+				author,
+				record: { text: "Video", createdAt: "2024-12-04T00:00:00.000Z" },
+				embed: { $type: "app.bsky.embed.video#view", cid: "vid", thumbnail: "https://video.bsky.app/thumb.jpg" },
+			},
+		}, {
+			post: {
+				uri: `at://${did}/app.bsky.feed.post/three`,
+				author,
+				record: { text: "", createdAt: "2024-12-03T00:00:00.000Z" },
+				embed: { $type: "app.bsky.embed.record#view", record: { $type: "app.bsky.embed.record#viewRecord", uri: "at://did:plc:hidden/app.bsky.feed.post/h", author: hidden, value: { text: "Hidden" } } },
+			},
+		}, {
+			post: {
+				uri: `at://${did}/app.bsky.feed.post/four`,
+				author,
+				record: { text: "Gone", createdAt: "2024-12-02T00:00:00.000Z" },
+				embed: { $type: "app.bsky.embed.record#view", record: { $type: "app.bsky.embed.record#viewNotFound", uri: "at://did:plc:gone/app.bsky.feed.post/g", notFound: true } },
+			},
+		}],
+	});
+	importer.addDataOverride("bluesky", `https://plc.directory/${did}`, {
+		service: [{ id: "#atproto_pds", type: "AtprotoPersonalDataServer", serviceEndpoint: "https://pds.example" }],
+	});
+
+	let [one, two, three, four] = await importer.getEntries({ contentType: "html" });
+	let quoteDate = new BlueskyUser("x").toReadableDate("2024-12-04T00:00:00.000Z");
+	assert.equal(one.content, `<p>Hi <a href="https://bsky.app/profile/did:plc:jane">@jane.example</a> 🎉 <a href="https://bsky.app/hashtag/11ty">#11ty</a> <a href="https://example.com/long/url">example.com/long...</a></p>
+<img src="https://cdn.bsky.app/img/a@jpeg" alt="Alt">
+<blockquote cite="https://bsky.app/profile/jane.example/post/quoted">
+<p>Quoted &lt;b&gt;</p>
+<p><a href="https://bsky.app/profile/x.example/post/nested">Quoted post</a></p>
+<p>— <a href="https://bsky.app/profile/jane.example">Jane</a> (<a href="https://bsky.app/profile/jane.example/post/quoted">${quoteDate}</a>)</p>
+</blockquote>`);
+	assert.equal(two.content, `<p>Video</p>
+<video controls="" src="https://pds.example/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Axpchjovbk6sxl3bv74z7cs54&amp;cid=vid" poster="https://video.bsky.app/thumb.jpg"></video>`);
+	assert.equal(three.content, `<p><a href="https://bsky.app/profile/hidden.example/post/h">Quoted post</a></p>`);
+	assert.equal(four.content, `<p>Gone</p>
+<p><a href="https://bsky.app/profile/did:plc:gone/post/g">Quoted post (unavailable)</a></p>`);
 });
 
 test("WordPress import", async (t) => {
@@ -1537,13 +1625,18 @@ on a new line</content>
 
 test("Bluesky replies", async (t) => {
 	let importer = getCommentsImporter("bluesky", "zachleat.com");
-	importer.addDataOverride("bluesky", "https://bsky.app/profile/zachleat.com/rss", Fetcher.parseXml(fs.readFileSync("./test/sources/bluesky-test.xml", "utf8")));
+	importer.addDataOverride("bluesky", BLUESKY_FEED_URL, getBlueskyFeed());
 
 	let root = "at://did:plc:xpchjovbk6sxl3bv74z7cs54/app.bsky.feed.post/3lckusgtkuk2r";
 	let reply = {
 		uri: "at://did:plc:jane/app.bsky.feed.post/aaa",
 		author: { handle: "jane.example", displayName: "Jane", avatar: "https://cdn.bsky.app/avatar.jpg" },
-		record: { text: "<b>Nice</b>\nlist", createdAt: "2024-12-05T15:00:00.000Z", reply: { parent: { uri: root } } },
+		record: {
+			text: "<b>Nice</b>\nlist 🎉 example.com/a...",
+			facets: [{ index: { byteStart: 22, byteEnd: 38 }, features: [{ $type: "app.bsky.richtext.facet#link", uri: "https://example.com/a/long" }] }],
+			createdAt: "2024-12-05T15:00:00.000Z",
+			reply: { parent: { uri: root } },
+		},
 	};
 	let nested = {
 		uri: "at://did:plc:xpchjovbk6sxl3bv74z7cs54/app.bsky.feed.post/bbb",
@@ -1584,14 +1677,14 @@ test("Bluesky replies", async (t) => {
 		url: "https://bsky.app/profile/jane.example/post/aaa",
 		author: { name: "Jane", url: "https://bsky.app/profile/jane.example", avatarUrl: "https://cdn.bsky.app/avatar.jpg" },
 		date: new Date("2024-12-05T15:00:00.000Z"),
-		content: "&lt;b&gt;Nice&lt;/b&gt;<br>\nlist",
+		content: `<p>&lt;b&gt;Nice&lt;/b&gt;<br>\nlist 🎉 <a href="https://example.com/a/long">example.com/a...</a></p>`,
 	}, {
 		id: nested.uri,
 		parentId: reply.uri,
 		url: "https://bsky.app/profile/zachleat.com/post/bbb",
 		author: { name: "zachleat.com", url: "https://bsky.app/profile/zachleat.com" },
 		date: new Date("2024-12-05T16:00:00.000Z"),
-		content: "Thanks",
+		content: "<p>Thanks</p>",
 	}, {
 		// Links only
 		id: hidden.uri,
@@ -1606,6 +1699,24 @@ test("Bluesky replies", async (t) => {
 		private: true,
 		date: new Date("2024-12-05T18:00:00.000Z"),
 	}]);
+});
+
+test("Escaped HTML stays escaped for JSON sources, Atom feeds are decoded", async (t) => {
+	let importer = getCommentsImporter("fediverse", { url: "@eleventy@fosstodon.org", comments: false });
+	let account = { id: "1", acct: "eleventy", url: "https://fosstodon.org/@eleventy" };
+	let statusesUrl = "https://fosstodon.org/api/v1/accounts/1/statuses?limit=40&exclude_replies=true&exclude_reblogs=true";
+	importer.addDataOverride("fediverse", "https://fosstodon.org/api/v1/accounts/lookup?acct=eleventy", account);
+	importer.addDataOverride("fediverse", statusesUrl, [{ id: "1", created_at: "2024-01-01T00:00:00.000Z", url: "https://fosstodon.org/@eleventy/1", content: "<p>Use &lt;output&gt; &amp; more</p>", account }]);
+	importer.addDataOverride("fediverse", `${statusesUrl}&max_id=1`, []);
+
+	let [status] = await importer.getEntries({ contentType: "html" });
+	assert.equal(status.content, "<p>Use &lt;output&gt; &amp; more</p>");
+
+	let atom = getCommentsImporter("atom", { url: "https://example.com/feed.xml", comments: false });
+	atom.addDataOverride("atom", "https://example.com/feed.xml", Fetcher.parseXml(`<feed xmlns="http://www.w3.org/2005/Atom"><title>Feed</title><entry><id>tag:example.com,2024:1</id><link href="https://example.com/one/"/><published>2024-01-01T00:00:00Z</published><updated>2024-01-01T00:00:00Z</updated><content type="html">&lt;p&gt;Hi&lt;/p&gt;</content></entry></feed>`));
+
+	let [item] = await atom.getEntries({ contentType: "html" });
+	assert.equal(item.content, "<p>Hi</p>");
 });
 
 test("Fediverse replies", async (t) => {
@@ -3253,7 +3364,6 @@ test("Fetch cache hits skip the origin queue", async (t) => {
 	fetcher.setOriginLimit(origin, { autoStart: false });
 	assert.deepEqual(await fetcher.fetch(`${origin}/cached`, { type: "json", directory }), { id: "/cached" });
 	let response = await fetcher.fetch(`${origin}/cached`, { type: "json", directory, returnType: "response" });
-	assert.equal(response.cache, "hit");
 	assert.deepEqual(response.body, { id: "/cached" });
 	assert.equal(requests, 1);
 
@@ -3736,3 +3846,138 @@ test("Letterboxd user", async (t) => {
 	importer.setVerbose(false);
 	importer.setDryRun(true);
 	importer.setAssetReferenceType("disabled");
+	importer.addSource("letterboxd", "@zachleat");
+	importer.addDataOverride("letterboxd", "https://letterboxd.com/zachleat/rss/", Fetcher.parseXml(fs.readFileSync("./test/sources/letterboxd-user.xml", "utf8")));
+
+	let [watch, review, rewatch, list] = await importer.getEntries({ contentType: "html" });
+
+	assert.equal(watch.type, "letterboxd");
+	assert.equal(watch.uuid, "11ty/import::letterboxd::letterboxd-watch-1535301824");
+	assert.deepEqual(watch.authors, [{ name: "Zach", url: "https://letterboxd.com/zachleat/" }]);
+	assert.equal(watch.metadata.rating, undefined);
+	assert.equal(watch.metadata.media.featuredImage, "https://a.ltrbxd.com/resized/film-poster/1/0/2/4/5/6/2/1024562-materialists-0-600-0-900-crop.jpg?v=ae3470f333");
+	assert.ok(!watch.content.includes("<img"));
+
+	assert.equal(review.content, "<p>“Video games!!”</p>");
+	assert.deepEqual(review.metadata, {
+		letterboxdType: "review",
+		media: { featuredImage: "https://a.ltrbxd.com/resized/film-poster/1/3/0/2/7/1/7/1302717-untitled-resident-evil-reboot-0-600-0-900-crop.jpg?v=a688bf1bc7" },
+		film: { title: "Resident Evil", year: 2026, tmdbId: 1423191 },
+		rating: 4,
+		liked: true,
+		rewatch: false,
+		watchedDate: "2026-10-07",
+	});
+
+	assert.equal(rewatch.metadata.rewatch, true);
+	assert.equal(rewatch.filePath, "zachleat/film/the-goonies/1.html");
+
+	assert.deepEqual(list.metadata, { letterboxdType: "list" });
+	assert.ok(list.content.includes(`<a href="https://letterboxd.com/film/edge-of-tomorrow/">Edge of Tomorrow</a>`));
+});
+
+const FLICKR_PHOTOS_URL = "https://api.flickr.com/services/rest/?method=flickr.people.getPublicPhotos&user_id=12345678%40N00&extras=description%2Cdate_upload%2Cdate_taken%2Clast_update%2Ctags%2Cgeo%2Cmedia%2Cpath_alias%2Cowner_name%2Curl_o%2Curl_k%2Curl_h%2Curl_l%2Curl_c%2Curl_z&per_page=500&page=PAGE&format=json&nojsoncallback=1&api_key=secret";
+
+function flickrPhoto(id, extra = {}) {
+	return {
+		id: String(id),
+		owner: "12345678@N00",
+		title: `Photo ${id}`,
+		description: { _content: "" },
+		dateupload: "1704067200",
+		lastupdate: "1704153600",
+		datetaken: "2023-12-31 09:30:00",
+		ownername: "Zach",
+		pathalias: "zachleat",
+		tags: "",
+		latitude: 0,
+		longitude: 0,
+		media: "photo",
+		url_l: `https://live.staticflickr.com/1/${id}_l.jpg`,
+		...extra,
+	};
+}
+
+function getFlickrImporter(t, user, pages) {
+	withEnv(t, { FLICKR_API_KEY: "secret" });
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+	importer.addSource("flickr", user);
+	for(let [index, photo] of pages.entries()) {
+		importer.addDataOverride("flickr", FLICKR_PHOTOS_URL.replace("PAGE", index + 1), { photos: { page: index + 1, pages: pages.length, photo }, stat: "ok" });
+	}
+	return importer;
+}
+
+test("Flickr user", async (t) => {
+	let importer = getFlickrImporter(t, "https://www.flickr.com/photos/zachleat/", [
+		[
+			flickrPhoto(2, {
+				description: { _content: `Line one\nwith <a href="https://example.com/">a link</a>` },
+				tags: "sunset beach",
+				latitude: "37.7749",
+				longitude: "-122.4194",
+				url_o: "https://live.staticflickr.com/1/2_o.jpg",
+			}),
+		],
+		[
+			flickrPhoto(1, { media: "video", title: "" }),
+		],
+	]);
+	importer.addDataOverride("flickr", "https://api.flickr.com/services/rest/?method=flickr.urls.lookupUser&url=https%3A%2F%2Fwww.flickr.com%2Fphotos%2Fzachleat%2F&format=json&nojsoncallback=1&api_key=secret", { user: { id: "12345678@N00" }, stat: "ok" });
+
+	let [photo, video] = await importer.getEntries({ contentType: "html" });
+
+	assert.equal(photo.uuid, "11ty/import::flickr::2");
+	assert.equal(photo.url, "https://www.flickr.com/photos/zachleat/2/");
+	assert.equal(photo.title, "Photo 2");
+	assert.deepEqual(photo.date, new Date("2024-01-01T00:00:00Z"));
+	assert.deepEqual(photo.dateUpdated, new Date("2024-01-02T00:00:00Z"));
+	assert.deepEqual(photo.authors, [{ name: "Zach", url: "https://www.flickr.com/photos/zachleat/" }]);
+	assert.deepEqual(photo.tags, ["sunset", "beach"]);
+	assert.equal(photo.content, `<p><img src="https://live.staticflickr.com/1/2_o.jpg" alt="Photo 2"></p>\n<p>Line one<br>\nwith <a href="https://example.com/">a link</a></p>`);
+	assert.deepEqual(photo.metadata, {
+		id: "2",
+		slug: "2",
+		media: { featuredImage: "https://live.staticflickr.com/1/2_o.jpg" },
+		dateTaken: "2023-12-31 09:30:00",
+		geo: { latitude: 37.7749, longitude: -122.4194 },
+		tags: ["sunset", "beach"],
+	});
+
+	assert.equal(video.metadata.postType, "video");
+	assert.equal(video.metadata.geo, undefined);
+	assert.ok(video.content.startsWith(`<p><a href="https://www.flickr.com/photos/zachleat/1/"><img src="https://live.staticflickr.com/1/1_l.jpg"`));
+	assert.equal(importer.getCounts().errors, 0);
+});
+
+test("Flickr NSID skips the user lookup", async (t) => {
+	let importer = getFlickrImporter(t, "12345678@N00", [[flickrPhoto(1)]]);
+	let entries = await importer.getEntries({ contentType: "html" });
+	assert.equal(entries.length, 1);
+});
+
+test("Flickr requires an API key", async (t) => {
+	withEnv(t, { FLICKR_API_KEY: undefined });
+	assert.throws(() => new Importer().addSource("flickr", "zachleat"), /FLICKR_API_KEY/);
+});
+
+test("Flickr API key isn’t logged", async (t) => {
+	withEnv(t, { FLICKR_API_KEY: "secret" });
+	let importer = new Importer();
+	importer.addSource("flickr", "zachleat");
+	let [source] = importer.getSources();
+	assert.equal(source.getLogUrl(FLICKR_PHOTOS_URL), FLICKR_PHOTOS_URL.replace("api_key=secret", "api_key=…"));
+});
+
+test("Flickr API errors throw", async (t) => {
+	withEnv(t, { FLICKR_API_KEY: "secret" });
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.addSource("flickr", "12345678@N00");
+	importer.addDataOverride("flickr", FLICKR_PHOTOS_URL.replace("PAGE", 1), { stat: "fail", code: 100, message: "Invalid API Key (Key has invalid format)" });
+	await assert.rejects(importer.getEntries(), /Flickr API error 100/);
+});

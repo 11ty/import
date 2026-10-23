@@ -11,6 +11,8 @@ class DataSource {
 	static SUPPORTS_COMMENTS = false;
 	// Downloads assets in comment content and avatars (e.g. your own media in a thread)
 	static COMMENT_ASSETS = false;
+	// HTML content is entity-encoded (e.g. from XML) and decoded for HTML output
+	static DECODE_HTML = true;
 
 	// Entries with unknown or partial comments (failed requests or nothing to request)
 	static #incompleteComments = new WeakSet();
@@ -185,6 +187,10 @@ class DataSource {
 		return (text || "").split(/(?:\r?\n){2,}/).map(paragraph => paragraph.trim()).filter(Boolean).map(paragraph => {
 			return `<p>${DataSource.nl2br(DataSource.linkify(paragraph))}</p>`;
 		}).join("\n");
+	}
+
+	shouldDecodeHtml() {
+		return this.constructor.DECODE_HTML;
 	}
 
 	setLabel(label) {

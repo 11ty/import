@@ -7,7 +7,10 @@ import { Rss } from "./Rss.js";
 export class FediverseUser extends DataSource {
 	static TYPE = "fediverse";
 	static TYPE_FRIENDLY = "Fediverse";
+	static DECODE_HTML = false;
 	static PER_PAGE = 40;
+	// Mastodon allows 300 requests per 5 minutes, see `Fetcher` for `x-ratelimit-*` handling
+	static CONCURRENCY = 4;
 	static SUPPORTS_COMMENTS = true;
 	static MEDIUMS = {
 		image: "image",
@@ -25,6 +28,14 @@ export class FediverseUser extends DataSource {
 		let { username, hostname } = FediverseUser.parseUsername(fullUsername);
 		this.username = username;
 		this.hostname = hostname;
+	}
+
+	setFetcher(fetcher) {
+		super.setFetcher(fetcher);
+		let origin = `https://${this.hostname}`;
+		if(!fetcher.hasOriginLimit(origin)) {
+			fetcher.setOriginLimit(origin, { concurrency: FediverseUser.CONCURRENCY });
+		}
 	}
 
 	static parseUsername(fullUsername) {

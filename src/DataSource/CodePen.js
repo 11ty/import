@@ -6,6 +6,7 @@ import { DataSource } from "../DataSource.js";
 export class CodePen extends DataSource {
 	static TYPE = "codepen";
 	static TYPE_FRIENDLY = "CodePen";
+	static DECODE_HTML = false;
 	static API = "https://api.codepen.io/v2";
 	static ORIGIN = "https://codepen.io";
 	static PER_PAGE = 100;

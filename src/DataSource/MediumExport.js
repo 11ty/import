@@ -8,6 +8,7 @@ import { DataSource } from "../DataSource.js";
 export class MediumExport extends DataSource {
 	static TYPE = "medium";
 	static TYPE_FRIENDLY = "Medium";
+	static DECODE_HTML = false;
 	static DRAFT_PREFIX = "draft_";
 
 	constructor(dir) {

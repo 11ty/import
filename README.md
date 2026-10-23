@@ -160,7 +160,7 @@ npx @11ty/import fediverse eleventy@fosstodon.org
 #### Bluesky
 
 ```sh
-# Import recent Bluesky posts (via RSS)
+# Import Bluesky posts and threads (via the Bluesky API, with quote posts, link cards, images, and your own videos)
 npx @11ty/import bluesky @11ty.dev
 ```
 
@@ -314,6 +314,8 @@ importer.setOutputFolder("."); // --output
 importer.setCacheDuration("24h"); // --cacheduration
 importer.setFetchTimeout("30s"); // milliseconds or a duration, 0 to disable
 importer.setFetchRetries(2); // for timeouts, network errors, 408, 429, and 5xx responses, 0 to disable
+importer.setFetchRetryDelay(1000); // milliseconds before the first retry, doubled after (`Retry-After` and `x-ratelimit-reset` take precedence)
+importer.setOriginLimit("https://mastodon.social", { concurrency: 2 }); // p-queue options for requests to an origin (cache hits skip it)
 importer.setVerbose(true); // --quiet
 importer.setSafeMode(false); // --overwrite
 importer.setDryRun(false); // --dryrun

@@ -4,6 +4,7 @@ import { DataSource } from "../DataSource.js";
 export class Blogger extends DataSource {
 	static TYPE = "blogger";
 	static TYPE_FRIENDLY = "Blogger";
+	static DECODE_HTML = false;
 	static FEEDS = ["posts", "pages"];
 	static PER_PAGE = 150;
 	static DEFAULT_AVATAR_HOSTS = ["img1.blogblog.com", "img2.blogblog.com"];

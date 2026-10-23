@@ -4,6 +4,7 @@ import { DataSource } from "../DataSource.js";
 export class DevTo extends DataSource {
 	static TYPE = "devto";
 	static TYPE_FRIENDLY = "DEV";
+	static DECODE_HTML = false;
 	static API = "https://dev.to/api/";
 	static PER_PAGE = 100;
 	static SUPPORTS_COMMENTS = true;

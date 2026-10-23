@@ -18,6 +18,7 @@ try {
 export class WordPressApi extends DataSource {
 	static TYPE = "wordpress";
 	static TYPE_FRIENDLY = "WordPress";
+	static DECODE_HTML = false;
 	// Fallback when the default category isn’t available from settings (requires auth)
 	static IGNORED_CATEGORIES = ["Uncategorized"];
 	static DEFAULT_CATEGORY_ID = 1;
@@ -330,6 +331,11 @@ export class WordPressApi extends DataSource {
 
 	getType() {
 		return this.#feed ? "xml" : "json";
+	}
+
+	// The RSS fallback is entity-encoded
+	shouldDecodeHtml() {
+		return Boolean(this.#feed);
 	}
 
 	getSiteUrl() {

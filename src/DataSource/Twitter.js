@@ -8,6 +8,7 @@ import { Archive } from "../Archive.js";
 export class Twitter extends DataSource {
 	static TYPE = "twitter";
 	static TYPE_FRIENDLY = "Twitter";
+	static DECODE_HTML = false;
 	static TWEETS_FILE = /^data\/tweets?(?:-part\d+)?\.js$/;
 	static MEDIA_FOLDER = /^data\/(?:tweets?|profile)_media\/\d+-(.+)$/;
 	static ENTITY_PATTERN = /https:\/\/t\.co\/\w+|@\w{1,15}/g;

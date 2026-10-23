@@ -8,6 +8,7 @@ import { GitHub } from "./GitHub.js";
 export class GitHubGist extends DataSource {
 	static TYPE = "github-gist";
 	static TYPE_FRIENDLY = "GitHub Gist";
+	static DECODE_HTML = false;
 	static PER_PAGE = 100;
 
 	#markdown = new MarkdownIt({ html: true, linkify: true });

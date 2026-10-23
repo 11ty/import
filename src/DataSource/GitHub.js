@@ -7,6 +7,7 @@ import { Npm } from "./Npm.js";
 export class GitHub extends DataSource {
 	static TYPE = "github";
 	static TYPE_FRIENDLY = "GitHub";
+	static DECODE_HTML = false;
 	static API = "https://api.github.com";
 	static WEBSITE = "https://github.com";
 	static PER_PAGE = 100;

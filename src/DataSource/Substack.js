@@ -5,6 +5,7 @@ import { MediaRss } from "../MediaRss.js";
 export class Substack extends DataSource {
 	static TYPE = "substack";
 	static TYPE_FRIENDLY = "Substack";
+	static DECODE_HTML = false;
 	static PER_PAGE = 25;
 	static SUPPORTS_COMMENTS = true;
 

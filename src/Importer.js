@@ -242,6 +242,15 @@ class Importer {
 		}
 	}
 
+	// Milliseconds before the first retry, doubled for each one after
+	setFetchRetryDelay(delay) {
+		if(delay !== undefined) {
+			this.fetcher.setFetchRetryDelay(delay);
+		}
+	}
+
+	// Per-origin p-queue options (e.g. `{ concurrency: 2 }`), replaces a source’s default limit
+	setOriginLimit(origin, options) {
 		this.fetcher.setOriginLimit(origin, options);
 	}
 
@@ -271,7 +280,7 @@ class Importer {
 			} else if(type === "wordpressxml") {
 				cls = WordPressXml;
 			} else if(type === "bluesky") {
-				cls = BlueskyUser; // RSS
+				cls = BlueskyUser;
 			} else if(type === "fediverse") {
 				cls = FediverseUser;
 			} else if(type === "squarespace") {
@@ -310,6 +319,10 @@ class Importer {
 				cls = CodePen;
 			} else if(type === "webmention" || type === "webmentions") {
 				cls = Webmentions;
+			} else if(type === "letterboxd") {
+				cls = Letterboxd;
+			} else if(type === "flickr") {
+				cls = Flickr;
 			}
 		} else if(typeof type === "function") {
 			cls = type;
@@ -570,7 +583,7 @@ class Importer {
 
 		if(Importer.isHtml(entry)) {
 			let transformedHtml = content;
-			if(!isWritingToMarkdown) {
+			if(!isWritingToMarkdown && entry.source?.shouldDecodeHtml() !== false) {
 				// decoding built-in with Markdown
 				transformedHtml = entities.decodeHTML(content);
 			}

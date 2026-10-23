@@ -6,6 +6,7 @@ import { DataSource } from "../DataSource.js";
 export class Instagram extends DataSource {
 	static TYPE = "instagram";
 	static TYPE_FRIENDLY = "Instagram";
+	static DECODE_HTML = false;
 	static API = "https://graph.instagram.com/v23.0";
 	static PER_PAGE = 100;
 	static MEDIA_FIELDS = "id,caption,media_type,media_product_type,media_url,permalink,thumbnail_url,timestamp,children{id,media_type,media_url,thumbnail_url}";

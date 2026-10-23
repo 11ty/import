@@ -6,6 +6,7 @@ import { DataSource } from "../DataSource.js";
 export class Linktree extends DataSource {
 	static TYPE = "linktree";
 	static TYPE_FRIENDLY = "Linktree";
+	static DECODE_HTML = false;
 	static ORIGIN = "https://linktr.ee";
 
 	constructor(target) {

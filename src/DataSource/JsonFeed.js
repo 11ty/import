@@ -5,6 +5,7 @@ import { MediaRss } from "../MediaRss.js";
 export class JsonFeed extends DataSource {
 	static TYPE = "jsonfeed";
 	static TYPE_FRIENDLY = "JSON Feed";
+	static DECODE_HTML = false;
 
 	#nextUrl;
 

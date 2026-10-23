@@ -4,6 +4,7 @@ import { DataSource } from "../DataSource.js";
 export class Ghost extends DataSource {
 	static TYPE = "ghost";
 	static TYPE_FRIENDLY = "Ghost";
+	static DECODE_HTML = false;
 	static RESOURCES = ["posts", "pages"];
 	static PER_PAGE = 100;
 	static COMMENT_COUNTS_BATCH_SIZE = 50;
