@@ -38,6 +38,14 @@ export class FediverseUser extends DataSource {
 		}
 	}
 
+	// Optional `MASTODON_ACCESS_TOKEN` (from the user’s server) uses a per-account rate limit instead of a per-IP one and returns full reply threads
+	getHeaders(url) {
+		if(process.env.MASTODON_ACCESS_TOKEN && url?.startsWith(`https://${this.hostname}/api/`)) {
+			return { Authorization: `Bearer ${process.env.MASTODON_ACCESS_TOKEN}` };
+		}
+		return {};
+	}
+
 	static parseUsername(fullUsername) {
 		if(fullUsername.startsWith("@")) {
 			fullUsername = fullUsername.slice(1);

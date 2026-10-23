@@ -15,6 +15,7 @@ import { WordPressApi } from "../src/DataSource/WordPressApi.js";
 import { Squarespace } from "../src/DataSource/Squarespace.js";
 import { Rss } from "../src/DataSource/Rss.js";
 import { BlueskyUser } from "../src/DataSource/BlueskyUser.js";
+import { FediverseUser } from "../src/DataSource/FediverseUser.js";
 import { Npm } from "../src/DataSource/Npm.js";
 import { GitHub } from "../src/DataSource/GitHub.js";
 import { GitHubGist } from "../src/DataSource/GitHubGist.js";
@@ -1717,6 +1718,18 @@ test("Escaped HTML stays escaped for JSON sources, Atom feeds are decoded", asyn
 
 	let [item] = await atom.getEntries({ contentType: "html" });
 	assert.equal(item.content, "<p>Hi</p>");
+});
+
+test("Fediverse access token is only sent to the user’s server API", async (t) => {
+	withEnv(t, { MASTODON_ACCESS_TOKEN: "FAKE_TOKEN" });
+
+	let source = new FediverseUser("@eleventy@fosstodon.org");
+	assert.deepEqual(source.getHeaders("https://fosstodon.org/api/v1/accounts/lookup?acct=eleventy"), { Authorization: "Bearer FAKE_TOKEN" });
+	assert.deepEqual(source.getHeaders("https://cdn.fosstodon.org/media/image.png"), {});
+	assert.deepEqual(source.getHeaders("https://mastodon.social/api/v1/statuses/1"), {});
+
+	withEnv(t, { MASTODON_ACCESS_TOKEN: undefined });
+	assert.deepEqual(source.getHeaders("https://fosstodon.org/api/v1/accounts/lookup?acct=eleventy"), {});
 });
 
 test("Fediverse replies", async (t) => {

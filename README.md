@@ -155,6 +155,9 @@ npx @11ty/import rss https://fosstodon.org/users/eleventy.rss
 ```sh
 # Import Mastodon posts (via the Mastodon API)
 npx @11ty/import fediverse eleventy@fosstodon.org
+
+# An optional MASTODON_ACCESS_TOKEN from an account on the same server avoids per-IP rate limits and includes full reply threads
+MASTODON_ACCESS_TOKEN=… npx @11ty/import fediverse eleventy@fosstodon.org
 ```
 
 #### Bluesky
