@@ -230,6 +230,7 @@ class DataSource {
 		return (new Date(Date.parse(dateStr))).toISOString();
 	}
 
+	// UTC so output doesn’t depend on the machine’s time zone
 	toReadableDate(dateStr, locale = 'en-US', options = {}) {
 		options = Object.assign({
 			year: "numeric",
@@ -239,7 +240,9 @@ class DataSource {
 			minute: "numeric",
 			second: "numeric",
 			timeZoneName: "short",
-		}, options);
+		}, options, {
+			timeZone: "UTC",
+		});
 
 		let date = (new Date(Date.parse(dateStr)));
 		return new Intl.DateTimeFormat(locale, options).format(date)
