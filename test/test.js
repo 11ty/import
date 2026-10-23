@@ -3147,6 +3147,134 @@ test("Fetch origin limit", async (t) => {
 	assert.equal(maxActive, 2);
 });
 
+test("Fetch retry delay headers", async (t) => {
+	let rateLimited = headers => ({ cause: { status: 429, headers: new Headers(headers) } });
+	let near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1000, `${actual} ≈ ${expected}`);
+
+	// Mastodon
+	near(Fetcher.getRetryDelay(rateLimited({ "x-ratelimit-reset": new Date(Date.now() + 60000).toISOString() }), 0, 1000), 60000);
+	// Epoch seconds
+	near(Fetcher.getRetryDelay(rateLimited({ "x-ratelimit-reset": String(Math.ceil(Date.now() / 1000) + 30) }), 0, 1000), 30000);
+	// Seconds from now
+	near(Fetcher.getRetryDelay(rateLimited({ "x-ratelimit-reset": "20" }), 0, 1000), 20000);
+	// `Retry-After` takes precedence
+	near(Fetcher.getRetryDelay(rateLimited({ "retry-after": "5", "x-ratelimit-reset": "20" }), 0, 1000), 5000);
+	near(Fetcher.getRetryDelay(rateLimited({ "retry-after": new Date(Date.now() + 8000).toUTCString() }), 0, 1000), 8000);
+	// Capped
+	assert.equal(Fetcher.getRetryDelay(rateLimited({ "x-ratelimit-reset": new Date(Date.now() + 3600000).toISOString() }), 0, 1000), Fetcher.MAX_RETRY_DELAY);
+	assert.equal(Fetcher.getRetryDelay(rateLimited({ "retry-after": "3600" }), 0, 1000, 10000), 10000);
+	// Plain object headers (cached response metadata)
+	near(Fetcher.getRateLimitResetDelay({ "x-ratelimit-reset": "20" }), 20000);
+
+	// Backoff for a reset in the past, a reset on another status, or no headers
+	let backoff = delay => delay >= 4000 && delay <= 5000;
+	assert.ok(backoff(Fetcher.getRetryDelay(rateLimited({ "x-ratelimit-reset": new Date(Date.now() - 1000).toISOString() }), 2, 1000)));
+	assert.ok(backoff(Fetcher.getRetryDelay({ cause: { status: 503, headers: new Headers({ "x-ratelimit-reset": "20" }) } }, 2, 1000)));
+	assert.ok(backoff(Fetcher.getRetryDelay(new Error("Timeout"), 2, 1000)));
+});
+
+test("Fetch waits for x-ratelimit-reset on a 429", async (t) => {
+	let { createServer } = await import("node:http");
+	let requests = 0;
+	let server = createServer((req, res) => {
+		requests++;
+		if(requests === 1) {
+			res.writeHead(429, {
+				"x-ratelimit-limit": "300",
+				"x-ratelimit-remaining": "0",
+				"x-ratelimit-reset": new Date(Date.now() + 1000).toISOString(),
+			});
+			return res.end();
+		}
+		res.end("ok");
+	});
+	await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => server.close());
+
+	let fetcher = new Fetcher();
+	fetcher.setVerbose(false);
+	fetcher.setFetchRetryDelay(1);
+
+	let start = Date.now();
+	assert.equal(await fetcher.fetch(`http://127.0.0.1:${server.address().port}/limited`), "ok");
+	assert.equal(requests, 2);
+	assert.ok(Date.now() - start >= 900);
+});
+
+test("Fetch slows down when x-ratelimit-remaining is low", async (t) => {
+	let { createServer } = await import("node:http");
+	let server = createServer((req, res) => {
+		res.writeHead(200, {
+			"x-ratelimit-limit": "300",
+			"x-ratelimit-remaining": req.url === "/low" ? "0" : "299",
+			"x-ratelimit-reset": new Date(Date.now() + 1000).toISOString(),
+		});
+		res.end("ok");
+	});
+	await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => server.close());
+
+	let origin = `http://127.0.0.1:${server.address().port}`;
+	let fetcher = new Fetcher();
+	fetcher.setVerbose(false);
+
+	let start = Date.now();
+	await fetcher.fetch(`${origin}/high`);
+	await fetcher.fetch(`${origin}/a`);
+	assert.ok(Date.now() - start < 500);
+
+	await fetcher.fetch(`${origin}/low`);
+	await fetcher.fetch(`${origin}/b`);
+	assert.ok(Date.now() - start >= 900);
+});
+
+test("Fetch cache hits skip the origin queue", async (t) => {
+	let { createServer } = await import("node:http");
+	let requests = 0;
+	let server = createServer((req, res) => {
+		requests++;
+		res.end(JSON.stringify({ id: req.url }));
+	});
+	await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => server.close());
+
+	let directory = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-cache-"));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+	let origin = `http://127.0.0.1:${server.address().port}`;
+	let fetcher = new Fetcher();
+	fetcher.setVerbose(false);
+	fetcher.setCacheDuration("1h");
+
+	assert.deepEqual(await fetcher.fetch(`${origin}/cached`, { type: "json", directory }), { id: "/cached" });
+	assert.equal(requests, 1);
+
+	// A queue that never starts
+	fetcher.setOriginLimit(origin, { autoStart: false });
+	assert.deepEqual(await fetcher.fetch(`${origin}/cached`, { type: "json", directory }), { id: "/cached" });
+	let response = await fetcher.fetch(`${origin}/cached`, { type: "json", directory, returnType: "response" });
+	assert.equal(response.cache, "hit");
+	assert.deepEqual(response.body, { id: "/cached" });
+	assert.equal(requests, 1);
+
+	// Uncached requests still wait
+	let uncached = fetcher.fetch(`${origin}/uncached`, { type: "json", directory });
+	let state = await Promise.race([uncached.then(() => "fetched"), new Promise(resolve => setTimeout(() => resolve("queued"), 100))]);
+	assert.equal(state, "queued");
+	assert.equal(requests, 1);
+});
+
+test("Fediverse default origin limit", async (t) => {
+	let importer = new Importer();
+	importer.setOriginLimit("https://example.social", { concurrency: 1 });
+	importer.addSource("fediverse", "@zachleat@zachleat.com");
+	importer.addSource("fediverse", "@someone@example.social");
+
+	assert.ok(importer.fetcher.hasOriginLimit("https://zachleat.com"));
+	assert.ok(importer.fetcher.hasOriginLimit("https://example.social"));
+	assert.equal(importer.fetcher.hasOriginLimit("https://example.com"), false);
+});
+
 const INSTAGRAM_API = "https://graph.instagram.com/v23.0";
 const INSTAGRAM_FIELDS = "id%2Ccaption%2Cmedia_type%2Cmedia_product_type%2Cmedia_url%2Cpermalink%2Cthumbnail_url%2Ctimestamp%2Cchildren%7Bid%2Cmedia_type%2Cmedia_url%2Cthumbnail_url%7D";
 
@@ -3602,3 +3730,9 @@ test("--prune removes unreferenced asset files from earlier imports", async (t) 
 	assert.deepEqual(list(), before.filter(name => name !== "old-AAAAAAAAAAAA.png"));
 	assert.ok(list().includes(newAsset));
 });
+
+test("Letterboxd user", async (t) => {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");

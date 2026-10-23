@@ -180,6 +180,12 @@ if(help) {
 
   # Import your public CodePen pens with their source files (requires CODEPEN_API_KEY)
   npx @11ty/import codepen zachleat
+
+  # Import recent Letterboxd diary entries, reviews, and lists
+  npx @11ty/import letterboxd zachleat
+
+  # Import public Flickr photos (requires FLICKR_API_KEY)
+  npx @11ty/import flickr zachleat
 `);
 
 	process.exit();

@@ -40,6 +40,8 @@ import { GitHub } from "./DataSource/GitHub.js";
 import { GitHubGist } from "./DataSource/GitHubGist.js";
 import { CodePen } from "./DataSource/CodePen.js";
 import { Webmentions } from "./DataSource/Webmentions.js";
+import { Letterboxd } from "./DataSource/Letterboxd.js";
+import { Flickr } from "./DataSource/Flickr.js";
 
 import pkg from "../package.json" with { type: "json" };
 
@@ -238,6 +240,9 @@ class Importer {
 		if(retries !== undefined) {
 			this.fetcher.setFetchRetries(retries);
 		}
+	}
+
+		this.fetcher.setOriginLimit(origin, options);
 	}
 
 	setPersistTarget(persistTarget) {
