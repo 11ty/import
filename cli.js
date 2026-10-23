@@ -170,6 +170,9 @@ if(help) {
   npx @11ty/import github 11ty/eleventy
   npx @11ty/import github 11ty
   npx @11ty/import github-gist zachleat
+
+  # Import your public CodePen pens with their source files (requires CODEPEN_API_KEY)
+  npx @11ty/import codepen zachleat
 `);
 
 	process.exit();

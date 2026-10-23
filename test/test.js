@@ -3482,3 +3482,69 @@ test("Unedited files are updated, locally modified files are skipped", async (t)
 	fs.writeFileSync(postFile, read().replace(/^\s*importHash: .*\n/m, ""));
 	assert.equal(await importPostTo(dir, "Four"), 0);
 });
+
+test("CodePen", async (t) => {
+	withEnv(t, { CODEPEN_API_KEY: "cp_user_secret" });
+	let importer = getImporter();
+	importer.addSource("codepen", "https://codepen.io/example");
+
+	importer.addDataOverride("codepen", "https://api.codepen.io/v2/pens?access=Public&per_page=100&page=1", [{
+		id: "abcXYZ",
+		title: "A Pen",
+		description: "A description",
+		tags: ["css"],
+		access: "Public",
+		editor: "Classic",
+		created_at: "2024-10-01T12:00:00Z",
+		updated_at: "2024-10-02T12:00:00Z",
+		screenshot_urls: { large: "https://example.codepen.dev/800.jpg" },
+	}]);
+	importer.addDataOverride("codepen", "https://api.codepen.io/v2/pens?access=Public&per_page=100&page=2", []);
+	importer.addDataOverride("codepen", "https://api.codepen.io/v2/pens/abcXYZ/files", [
+		{ path: "/index.html", name: "index.html", is_binary: false, content: "<p>Hi</p>\n" },
+		{ path: "/style.css", name: "style.css", is_binary: false, content: "p { color: red; }" },
+		// Empty panels are skipped
+		{ path: "/script.js", name: "script.js", is_binary: false, content: " " },
+	]);
+
+	let [entry] = await importer.getEntries({ contentType: "markdown" });
+
+	assert.equal(entry.uuid, "11ty/import::codepen::abcXYZ");
+	assert.equal(entry.title, "A Pen");
+	assert.equal(entry.url, "https://codepen.io/example/pen/abcXYZ");
+	assert.equal(entry.filePath, "abcXYZ.md");
+	assert.equal(entry.description, "A description");
+	assert.deepEqual(entry.tags, ["css"]);
+	assert.deepEqual(entry.date, new Date("2024-10-01T12:00:00Z"));
+	assert.deepEqual(entry.dateUpdated, new Date("2024-10-02T12:00:00Z"));
+	assert.deepEqual(entry.authors, [{ name: "example", url: "https://codepen.io/example" }]);
+	assert.deepEqual(entry.metadata, {
+		id: "abcXYZ",
+		editor: "Classic",
+		files: ["/index.html", "/style.css"],
+		media: { featuredImage: "https://example.codepen.dev/800.jpg" },
+		tags: ["css"],
+	});
+	assert.equal(entry.content, [
+		"A description",
+		"",
+		"## index.html",
+		"",
+		"```html",
+		"<p>Hi</p>",
+		"```",
+		"",
+		"## style.css",
+		"",
+		"```css",
+		"p {",
+		"  color: red;",
+		"}",
+		"```",
+	].join("\n"));
+});
+
+test("CodePen requires an API key", async (t) => {
+	withEnv(t, { CODEPEN_API_KEY: undefined });
+	assert.throws(() => getImporter().addSource("codepen", "example"), /CODEPEN_API_KEY/);
+});

@@ -186,6 +186,7 @@ npx @11ty/import bluesky @11ty.dev
 #### Experimental
 
 - `blogger` (blog URL, custom domains too, links to other imported posts point to their files)
+- `codepen` (your CodePen username, public pens with their source files, requires a `CODEPEN_API_KEY` environment variable from [CodePen API settings](https://codepen.io/settings/api))
 - `devto` (DEV username or organization)
 - `ghost` (site URL)
 - `github` (`owner/repo` or repository URL for releases, `owner` or profile URL for a user’s or organization’s repositories, an optional `GITHUB_TOKEN` environment variable raises the rate limit and includes draft releases)

@@ -38,6 +38,7 @@ import { Linktree } from "./DataSource/Linktree.js";
 import { Npm } from "./DataSource/Npm.js";
 import { GitHub } from "./DataSource/GitHub.js";
 import { GitHubGist } from "./DataSource/GitHubGist.js";
+import { CodePen } from "./DataSource/CodePen.js";
 import { Webmentions } from "./DataSource/Webmentions.js";
 
 import pkg from "../package.json" with { type: "json" };
@@ -293,6 +294,8 @@ class Importer {
 				cls = GitHub;
 			} else if(type === "github-gist") {
 				cls = GitHubGist;
+			} else if(type === "codepen") {
+				cls = CodePen;
 			} else if(type === "webmention" || type === "webmentions") {
 				cls = Webmentions;
 			}
