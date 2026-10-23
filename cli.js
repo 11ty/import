@@ -122,7 +122,7 @@ if(help) {
   # Change the output folder (default: ".")
   npx @11ty/import [type] [target] --output=dist
 
-  # Allow overwriting existing files
+  # Allow overwriting locally modified files
   npx @11ty/import [type] [target] --overwrite
 
   # Allow draft entries to overwrite existing files (bypasses --overwrite)

@@ -38,6 +38,7 @@
 	"dependencies": {
 		"@11ty/eleventy-fetch": "^6.0.1",
 		"@11ty/eleventy-utils": "^3.0.1",
+		"@11ty/gray-matter": "^3.0.0",
 		"@11ty/posthtml-urls": "^2.0.0",
 		"@prettier/sync": "^0.6.1",
 		"@sindresorhus/slugify": "^3.0.1",

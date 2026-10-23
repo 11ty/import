@@ -7,12 +7,12 @@ class Logger {
 	}
 
 	static _logFsOperation(label, type, local, remote, options = {}) {
-		let { size, dryRun } = options;
+		let { size, dryRun, reason = "no --overwrite" } = options;
 
 		let extras = [];
 		let prefix = "";
 		if(label === "Skipping") {
-			prefix = " (no --overwrite)";
+			prefix = ` (${reason})`;
 		} else {
 			if(size) {
 				extras.push(filesize(size, {

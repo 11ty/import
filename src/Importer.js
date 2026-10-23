@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import { dump } from 'js-yaml'
+import { createHash } from "node:crypto";
+import matter from "@11ty/gray-matter";
 import kleur from "kleur";
 import slugify from '@sindresorhus/slugify';
 import * as entities from "entities";
@@ -595,9 +596,8 @@ class Importer {
 			return false;
 		}
 
-		// File system operations
-		// TODO use https://www.npmjs.com/package/diff to compare file contents and skip
-		if(this.safeMode && fs.existsSync(entry.filePath)) {
+		// Unedited files are always rewritten
+		if(this.safeMode && fs.existsSync(entry.filePath) && Importer.isLocallyModified(entry.filePath)) {
 			// Not a draft or drafts are skipped (via --overwrite-allow)
 			if(entry.status !== "draft" || !this.allowDraftsToOverwrite) {
 				return true;
@@ -759,7 +759,55 @@ class Importer {
 		return `${pathname}${extension}`;
 	}
 
-	static convertEntryToYaml(entry) {
+	static IMPORT_HASH_KEY = "importHash";
+
+	// Front matter data (without `importHash`) and body
+	static createContentHash(data, body) {
+		return createHash("sha256").update(`${JSON.stringify(data)}\n${body}`).digest("hex").slice(0, 16);
+	}
+
+	// Files without a matching `importHash` were edited after import (or imported by an earlier version)
+	static isLocallyModified(filePath) {
+		return !Importer.getImportHash(filePath);
+	}
+
+	// Stored `importHash` and the hash computed from the rest of the file
+	static parseImportHash(fileContent) {
+		// Options skip gray-matter’s cache
+		let { data, content } = matter(fileContent.replace(/\r\n/g, "\n"), {});
+		let { [Importer.IMPORT_HASH_KEY]: hash, ...metadata } = data.metadata || {};
+
+		return {
+			hash,
+			computed: Importer.createContentHash({ ...data, metadata }, content),
+		};
+	}
+
+	// Hash of an unedited file, otherwise undefined
+	static getImportHash(filePath) {
+		try {
+			let { hash, computed } = Importer.parseImportHash(fs.readFileSync(filePath, "utf8"));
+			if(hash && hash === computed) {
+				return hash;
+			}
+		} catch(e) {
+			// Invalid front matter
+		}
+	}
+
+	static getFileContent(entry) {
+		// https://www.npmjs.com/package/js-yaml#dump-object---options-
+		// A file object keeps content starting with `---` from being parsed as front matter
+		let toContent = importHash => matter.stringify({ content: entry.content }, Importer.getFrontMatterData(entry, { importHash }), {
+			noCompatMode: true,
+		});
+
+		// Hashed the same way getImportHash reads it back
+		let { computed: hash } = Importer.parseImportHash(toContent());
+		return { content: toContent(hash), hash };
+	}
+
+	static getFrontMatterData(entry, { importHash } = {}) {
 		let data = {};
 		data.title = entry.title;
 		if(entry.description) {
@@ -771,6 +819,9 @@ class Importer {
 		data.metadata.uuid = entry.uuid;
 		data.metadata.type = entry.type;
 		data.metadata.url = entry.url;
+		if(importHash) {
+			data.metadata = { ...data.metadata, [Importer.IMPORT_HASH_KEY]: importHash };
+		}
 
 		// Eleventy specific options
 		if(entry.status === "draft") {
@@ -786,13 +837,7 @@ class Importer {
 			data.tags = entry.tags.map(tag => slugify(tag));
 		}
 
-		// https://www.npmjs.com/package/js-yaml#dump-object---options-
-		let frontMatter = dump(data, {
-			// sortKeys: true,
-			noCompatMode: true,
-		});
-
-		return frontMatter;
+		return data;
 	}
 
 	// Template data file next to the post (e.g. `my-post.md` → `my-post.json`)
@@ -884,34 +929,37 @@ class Importer {
 
 			let files = [];
 			if(!isDataOnly) {
-				let frontMatter = Importer.convertEntryToYaml(entry);
-				let content = `---
-${frontMatter}---
-${entry.content}`;
+				let { content, hash } = Importer.getFileContent(entry);
 
 				if(this.shouldSkipEntry(entry)) {
 					if(this.isVerbose) {
-						Logger.skipping("post", pathname, entry.url);
+						Logger.skipping("post", pathname, entry.url, { reason: "locally modified, no --overwrite" });
 					}
 					continue;
 				}
 
-				if(this.isVerbose) {
-					Logger.importing("post", pathname, entry.url, {
-						size: content.length,
-						dryRun: this.dryRun
-					});
+				if(fs.existsSync(pathname) && Importer.getImportHash(pathname) === hash) {
+					if(this.isVerbose) {
+						Logger.skipping("post", pathname, entry.url, { reason: "unchanged" });
+					}
+				} else {
+					if(this.isVerbose) {
+						Logger.importing("post", pathname, entry.url, {
+							size: content.length,
+							dryRun: this.dryRun
+						});
+					}
+
+					if(!this.dryRun) {
+						this.counts.files++;
+
+						this.directoryManager.createDirectoryForPath(pathname);
+
+						fs.writeFileSync(pathname, content, { encoding: "utf8" });
+					}
+
+					files.push({ pathname, content, type: "post" });
 				}
-
-				if(!this.dryRun) {
-					this.counts.files++;
-
-					this.directoryManager.createDirectoryForPath(pathname);
-
-					fs.writeFileSync(pathname, content, { encoding: "utf8" });
-				}
-
-				files.push({ pathname, content, type: "post" });
 			}
 
 			// Data only sources and complete comments replace their items, incomplete comments are merged

@@ -12,8 +12,9 @@ A small utility (and CLI) to import content files from various content sources. 
 - **Standalone**: downloads all referenced assets (images, videos, stylesheets, scripts, etc) in content and co-locates assets with the content.
 	- WordPress: also downloads linked uploads (e.g. PDFs) and makes links to the site root-relative.
 - **Resumable**: Can stop and resume a large import later, reusing a local cache (with configurable cache duration)
-- **Repeatable**: avoids overwriting existing content files (unless you opt-in with `--overwrite`).
+- **Repeatable**: updates imported content files but avoids overwriting ones you’ve edited (unless you opt-in with `--overwrite`).
 	- This allows you to continue using an import source for new content while editing the already imported content.
+	- Edits are detected with the `metadata.importHash` front matter value (files without it are treated as edited).
 	- Use `--dryrun` for testing without writing any files.
 
 ## Usage
@@ -36,7 +37,7 @@ npx @11ty/import [type] [target] --quiet
 # Change the output folder (default: ".")
 npx @11ty/import [type] [target] --output=dist
 
-# Allow overwriting existing files
+# Allow overwriting locally modified files
 npx @11ty/import [type] [target] --overwrite
 
 # Allow draft entries to overwrite existing files (bypasses --overwrite)

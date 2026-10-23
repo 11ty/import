@@ -262,7 +262,7 @@ test("WordPress featured image and description without Jetpack, issue #11", asyn
 	assert.equal(entries[2].metadata.media, undefined);
 	assert.equal(entries[2].description, undefined);
 
-	assert.match(Importer.convertEntryToYaml(entries[1]), /^description: Yoast description$/m);
+	assert.match(Importer.getFileContent(entries[1]).content, /^description: Yoast description$/m);
 });
 
 // Used for API discovery
@@ -3419,4 +3419,66 @@ test("GitHub targets", async (t) => {
 	assert.deepEqual(GitHub.parseTarget("11ty"), { owner: "11ty", repo: undefined });
 	assert.deepEqual(GitHub.parseTarget("https://github.com/ZachLeat"), { owner: "zachleat", repo: undefined });
 	assert.equal(GitHubGist.getUsername("https://gist.github.com/zachleat"), "zachleat");
+});
+
+async function importPostTo(dir, content, { overwrite = false } = {}) {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setOutputFolder(dir);
+	importer.setAssetReferenceType("disabled");
+	importer.setSafeMode(!overwrite);
+
+	class MySource extends DataSource {
+		static TYPE = "arbitrary";
+
+		getType() {
+			return "json";
+		}
+
+		getUrl() {
+			return "https://example.com/posts.json";
+		}
+	}
+
+	importer.addSource(MySource);
+	let [source] = importer.getSources();
+	source.setDataOverride("https://example.com/posts.json", [{ url: "https://example.com/one/", content, contentType: "text" }]);
+	await importer.toFiles(await importer.getEntries({ target: "fs" }));
+	return importer.getCounts().files;
+}
+
+test("Unedited files are updated, locally modified files are skipped", async (t) => {
+	let dir = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-hash-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	let postFile = path.join(dir, "one.html");
+	let read = () => fs.readFileSync(postFile, "utf8");
+
+	assert.equal(await importPostTo(dir, "One"), 1);
+	assert.match(read(), /^  importHash: '?[a-f0-9]{16}'?$/m);
+	assert.equal(Importer.isLocallyModified(postFile), false);
+
+	// Unchanged upstream content isn’t rewritten (line endings are ignored)
+	assert.equal(await importPostTo(dir, "One"), 0);
+	fs.writeFileSync(postFile, read().replace(/\n/g, "\r\n"));
+	assert.equal(await importPostTo(dir, "One"), 0);
+	assert.match(read(), /\r\n/);
+
+	// Unedited files are updated
+	assert.equal(await importPostTo(dir, "Two"), 1);
+	assert.match(read(), /Two\n$/);
+
+	// Local edits are kept
+	fs.writeFileSync(postFile, read().replace("Two", "Edited"));
+	assert.equal(Importer.isLocallyModified(postFile), true);
+	assert.equal(await importPostTo(dir, "Three"), 0);
+	assert.match(read(), /Edited\n$/);
+
+	// Unless overwritten
+	assert.equal(await importPostTo(dir, "Three", { overwrite: true }), 1);
+	assert.match(read(), /Three\n$/);
+	assert.equal(Importer.isLocallyModified(postFile), false);
+
+	// Files without a hash (earlier versions) are treated as edited
+	fs.writeFileSync(postFile, read().replace(/^\s*importHash: .*\n/m, ""));
+	assert.equal(await importPostTo(dir, "Four"), 0);
 });
