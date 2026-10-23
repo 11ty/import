@@ -46,7 +46,6 @@
 		"entities": "^8.1.0",
 		"fast-xml-parser": "^5.11.2",
 		"filesize": "^11.0.28",
-		"js-yaml": "^5.5.0",
 		"kleur": "^4.1.5",
 		"markdown-it": "^15.0.3",
 		"p-queue": "^10.0.0",
