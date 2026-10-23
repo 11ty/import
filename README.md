@@ -93,7 +93,6 @@ npx @11ty/import [type] [target] --persist=github:zachleat/wp-awesome
 - `fediverse` (username)
 - `jsonfeed` (URL)
 - `rss` (URL)
-- `squarespace` (collection, post, or page URL, e.g. a blog home page)
 - `wordpress` (blog home page URL, discovers the site’s own REST API or falls back to the WordPress.com API, then to the site’s paged RSS feed for posts only)
 - `wordpressxml` (WordPress export file path or URL)
 - `youtubeuser` (user id)
@@ -124,16 +123,6 @@ npx @11ty/import wordpress https://en.blog.wordpress.com
 npx @11ty/import wordpressxml ./example.WordPress.2024-01-01.xml --posttypes=posts,pages,product
 ```
 
-#### Squarespace
-
-```sh
-# Import all posts from a Squarespace blog (or another collection like events or products)
-npx @11ty/import squarespace https://engineering.squarespace.com/blog
-
-# Import a single page or post
-npx @11ty/import squarespace https://engineering.squarespace.com/about
-```
-
 #### JSON Feed
 
 ```sh
@@ -158,17 +147,6 @@ npx @11ty/import atom https://github.com/11ty/eleventy/releases.atom
 npx @11ty/import rss https://fosstodon.org/users/eleventy.rss
 ```
 
-#### Aliases
-
-Some services are aliases for another source type.
-
-- `buttondown` (username or newsletter URL, custom domains too): `rss`
-
-```sh
-# Import public Buttondown archive posts (via RSS)
-npx @11ty/import buttondown zachleat
-```
-
 #### Fediverse
 
 ```sh
@@ -186,6 +164,7 @@ npx @11ty/import bluesky @11ty.dev
 #### Experimental
 
 - `blogger` (blog URL, custom domains too, links to other imported posts point to their files)
+- `buttondown` (username or newsletter URL, custom domains too, an alias for `rss`)
 - `codepen` (your CodePen username, public pens with their source files, requires a `CODEPEN_API_KEY` environment variable from [CodePen API settings](https://codepen.io/settings/api))
 - `devto` (DEV username or organization)
 - `ghost` (site URL)
@@ -195,6 +174,7 @@ npx @11ty/import bluesky @11ty.dev
 - `linktree` (Linktree username or profile URL)
 - `medium` (extracted Medium export folder path)
 - `npm` (npm username or `@scope` organization, packages they maintain)
+- `squarespace` (collection, post, or page URL, e.g. a blog home page)
 - `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
 - `typepad` (Typepad blog URL or domain, optionally with a path, from the Wayback Machine)
 - `hobix` (Hobix blog URL or domain, from the Wayback Machine)
@@ -206,6 +186,15 @@ npx @11ty/import bluesky @11ty.dev
 # Import all posts (paid posts are previews unless a subscriber’s `substack.sid` cookie value is supplied in a SUBSTACK_SID environment variable)
 npx @11ty/import substack https://www.lennysnewsletter.com
 npx @11ty/import substack example
+
+# Import public Buttondown archive posts (via RSS)
+npx @11ty/import buttondown zachleat
+
+# Import all posts from a Squarespace blog (or another collection like events or products)
+npx @11ty/import squarespace https://engineering.squarespace.com/blog
+
+# Import a single Squarespace page or post
+npx @11ty/import squarespace https://engineering.squarespace.com/about
 
 # Import all posts and pages from the Content API
 # The public key is found on the site (from Ghost’s built-in search) or supplied in a GHOST_CONTENT_API_KEY environment variable
