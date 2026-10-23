@@ -249,5 +249,11 @@ let entries = await importer.getEntries({
 
 await importer.toFiles(entries);
 
+let persistResult = await importer.persist();
+
 importer.logResults();
+
+if(persistResult.failures.length) {
+	process.exitCode = 1;
+}
 

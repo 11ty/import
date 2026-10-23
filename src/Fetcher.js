@@ -389,6 +389,7 @@ class Fetcher {
 				this.#persistManager.persistFile(fullOutputLocation, result.body, {
 					assetUrl,
 					type: "asset",
+					source: contextEntry.type,
 				});
 			}
 

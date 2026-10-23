@@ -258,6 +258,16 @@ class Importer {
 		this.persistManager.setTarget(persistTarget);
 	}
 
+	// `batch` (default, one commit per run) or `file` (one commit per file)
+	setPersistMode(mode) {
+		this.persistManager.setMode(mode);
+	}
+
+	// Writes files queued during toFiles(), returns `{ commits, files, failures }`
+	async persist() {
+		return this.persistManager.flush();
+	}
+
 	addSource(type, options = {}) {
 		let cls;
 		let alias;
@@ -1022,6 +1032,7 @@ class Importer {
 					await this.persistManager.persistFile(file.pathname, file.content, {
 						url: entry.url,
 						type: file.type,
+						source: entry.type,
 					});
 				}
 			}
