@@ -426,8 +426,9 @@ class MarkdownToHtml {
 					unusedAssets.push(...remainingUrls);
 
 					// New lines are stripped by markdown-it anyway when encoding back to HTML
-					let altString = (node.getAttribute("alt") || "").replace(/\n+/gi, " ");
-					return `![${entities.escapeAttribute(altString)}](${src})`;
+					let altString = (node.getAttribute("alt") || "").replace(/\s*\n\s*/g, " ").trim();
+					// Alt is Markdown inline text, not an HTML attribute
+					return `![${ts.escape(altString)}](${src})`;
 				} catch(e) {
 					// Otherwise errors get swallowed without feedback by Turndown
 					console.error(`Error processing high-resolution images on ${filePath}`, e);

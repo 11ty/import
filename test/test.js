@@ -2102,7 +2102,7 @@ for(let archivePath of [TWITTER_FOLDER, TWITTER_ZIP]) {
 			`A photo and a video  `,
 			`Second line`,
 			``,
-			`![A &quot;photo&quot;](https://pbs.twimg.com/media/Photo1.jpg)`,
+			`![A "photo"](https://pbs.twimg.com/media/Photo1.jpg)`,
 			``,
 			// Archived video variant is preferred over the highest bitrate
 			`<video controls="" src="https://video.twimg.com/ext_tw_video/3/pu/vid/640x360/Small.mp4?tag=10" poster="https://pbs.twimg.com/ext_tw_video_thumb/3/pu/img/Poster.jpg"></video>`,
