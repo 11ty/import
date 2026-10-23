@@ -199,13 +199,31 @@ test("Bluesky rich text, embeds, and paging past reposts", async (t) => {
 				record: { text: "Gone", createdAt: "2024-12-02T00:00:00.000Z" },
 				embed: { $type: "app.bsky.embed.record#view", record: { $type: "app.bsky.embed.record#viewNotFound", uri: "at://did:plc:gone/app.bsky.feed.post/g", notFound: true } },
 			},
+		}, {
+			post: {
+				uri: `at://${did}/app.bsky.feed.post/five`,
+				author,
+				record: {
+					text: "See example.com",
+					createdAt: "2024-12-01T00:00:00.000Z",
+					facets: [{ index: { byteStart: 4, byteEnd: 15 }, features: [{ $type: "app.bsky.richtext.facet#link", uri: "https://example.com" }] }],
+				},
+				embed: { $type: "app.bsky.embed.external#view", external: { uri: "https://example.com/", title: "Example", description: "Duplicate" } },
+			},
+		}, {
+			post: {
+				uri: `at://${did}/app.bsky.feed.post/six`,
+				author,
+				record: { text: "Card", createdAt: "2024-11-30T00:00:00.000Z" },
+				embed: { $type: "app.bsky.embed.external#view", external: { uri: "https://example.com/", title: "Example", description: "Kept" } },
+			},
 		}],
 	});
 	importer.addDataOverride("bluesky", `https://plc.directory/${did}`, {
 		service: [{ id: "#atproto_pds", type: "AtprotoPersonalDataServer", serviceEndpoint: "https://pds.example" }],
 	});
 
-	let [one, two, three, four] = await importer.getEntries({ contentType: "html" });
+	let [one, two, three, four, five, six] = await importer.getEntries({ contentType: "html" });
 	let quoteDate = new BlueskyUser("x").toReadableDate("2024-12-04T00:00:00.000Z");
 	assert.equal(one.content, `<p>Hi <a href="https://bsky.app/profile/did:plc:jane">@jane.example</a> 🎉 <a href="https://bsky.app/hashtag/11ty">#11ty</a> <a href="https://example.com/long/url">example.com/long...</a></p>
 <img src="https://cdn.bsky.app/img/a@jpeg" alt="Alt">
@@ -219,6 +237,10 @@ test("Bluesky rich text, embeds, and paging past reposts", async (t) => {
 	assert.equal(three.content, `<p><a href="https://bsky.app/profile/hidden.example/post/h">Quoted post</a></p>`);
 	assert.equal(four.content, `<p>Gone</p>
 <p><a href="https://bsky.app/profile/did:plc:gone/post/g">Quoted post (unavailable)</a></p>`);
+	assert.equal(five.content, `<p>See <a href="https://example.com">example.com</a></p>`);
+	assert.equal(six.content, `<p>Card</p>
+<p><a href="https://example.com/">Example</a><br>
+Kept</p>`);
 });
 
 test("WordPress import", async (t) => {

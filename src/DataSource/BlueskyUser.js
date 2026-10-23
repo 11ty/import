@@ -134,6 +134,21 @@ export class BlueskyUser extends DataSource {
 		return post.labels?.length > 0 || (post.author?.labels || []).some(label => label.val === BlueskyUser.NO_UNAUTHENTICATED_LABEL);
 	}
 
+	// Link cards are skipped when the post text already links to the same URL
+	static hasLinkFacet(record, uri) {
+		let normalize = url => {
+			try {
+				return new URL(url).href;
+			} catch(e) {
+				return url;
+			}
+		};
+		let target = normalize(uri);
+		return (record?.facets || []).some(({ features = [] }) => features.some(feature => {
+			return feature.$type === "app.bsky.richtext.facet#link" && normalize(feature.uri) === target;
+		}));
+	}
+
 	static getLink(url, text) {
 		return `<a href="${entities.escapeAttribute(url)}">${entities.escapeText(text || url)}</a>`;
 	}
@@ -206,6 +221,9 @@ export class BlueskyUser extends DataSource {
 		}
 		if(type === "app.bsky.embed.external#view") {
 			let { uri, title, description } = embed.external || {};
+			if(BlueskyUser.hasLinkFacet(post.record || post.value, uri)) {
+				return "";
+			}
 			let descriptionHtml = description ? `<br>\n${entities.escapeText(description)}` : "";
 			return `<p>${BlueskyUser.getLink(uri, title)}${descriptionHtml}</p>`;
 		}
