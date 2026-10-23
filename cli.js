@@ -43,6 +43,10 @@ let { positionals, values } = parseArgs({
 			type: "boolean",
 			default: false,
 		},
+		prune: {
+			type: "boolean",
+			default: false,
+		},
 		"overwrite-allow": {
 			type: "string",
 			default: "",
@@ -94,7 +98,7 @@ let { positionals, values } = parseArgs({
 });
 
 let [ type, target ] = positionals;
-let { quiet, dryrun, output, help, version, overwrite, cacheduration, format, persist, assetrefs, avatarrefs, within, preserve, posttypes, limit, until, contentselector } = values;
+let { quiet, dryrun, output, help, version, overwrite, prune, cacheduration, format, persist, assetrefs, avatarrefs, within, preserve, posttypes, limit, until, contentselector } = values;
 
 if(version) {
 	const require = createRequire(import.meta.url);
@@ -127,6 +131,9 @@ if(help) {
 
   # Allow draft entries to overwrite existing files (bypasses --overwrite)
   npx @11ty/import [type] [target] --overwrite-allow=drafts
+
+  # Delete unreferenced asset files (e.g. from earlier imports) in imported post folders
+  npx @11ty/import [type] [target] --prune
 
   # Change local fetch cache duration (default: 24h)
   npx @11ty/import [type] [target] --cacheduration=20m
@@ -194,6 +201,7 @@ importer.setCacheDuration(cacheduration);
 importer.setVerbose(!quiet);
 importer.setSafeMode(!overwrite);
 importer.setDryRun(dryrun);
+importer.setPruneAssets(prune);
 try {
 	importer.addSource(type, posttypes || limit || until || contentselector ? {
 		url: target,

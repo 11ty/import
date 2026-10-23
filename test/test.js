@@ -3548,3 +3548,57 @@ test("CodePen requires an API key", async (t) => {
 	withEnv(t, { CODEPEN_API_KEY: undefined });
 	assert.throws(() => getImporter().addSource("codepen", "example"), /CODEPEN_API_KEY/);
 });
+
+test("--prune removes unreferenced asset files from earlier imports", async (t) => {
+	let dir = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-prune-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+	let run = async ({ prune = true, dryRun = false } = {}) => {
+		let importer = new Importer();
+		importer.setVerbose(false);
+		importer.setOutputFolder(dir);
+		importer.setAssetReferenceType("colocate");
+		importer.setPruneAssets(prune);
+		importer.setDryRun(dryRun);
+
+		class MySource extends DataSource {
+			static TYPE = "arbitrary";
+
+			getType() {
+				return "json";
+			}
+
+			getUrl() {
+				return "https://example.com/posts.json";
+			}
+
+			async getLocalAsset() {
+				return { body: Buffer.from("png"), contentType: "image/png" };
+			}
+		}
+
+		importer.addSource(MySource);
+		let [source] = importer.getSources();
+		source.setDataOverride("https://example.com/posts.json", [{ url: "https://example.com/one/", content: `<img src="https://example.com/new.png">`, contentType: "html" }]);
+		await importer.toFiles(await importer.getEntries({ contentType: "html", target: "fs" }));
+		return importer.getCounts().pruned;
+	};
+
+	await run({ prune: false });
+	let postDir = path.dirname(fs.globSync("**/*.html", { cwd: dir }).map(file => path.join(dir, file))[0]);
+	let list = () => fs.readdirSync(postDir).sort();
+	let [newAsset] = list().filter(name => name.startsWith("new-"));
+
+	fs.writeFileSync(path.join(postDir, "old-AAAAAAAAAAAA.png"), "old");
+	fs.writeFileSync(path.join(postDir, "linked-BBBBBBBBBBBB.png"), "linked");
+	fs.writeFileSync(path.join(postDir, "notes.md"), "![](linked-BBBBBBBBBBBB.png)");
+	fs.writeFileSync(path.join(postDir, "handmade.png"), "handmade");
+	let before = list();
+
+	assert.equal(await run({ dryRun: true }), 1);
+	assert.deepEqual(list(), before);
+
+	assert.equal(await run(), 1);
+	assert.deepEqual(list(), before.filter(name => name !== "old-AAAAAAAAAAAA.png"));
+	assert.ok(list().includes(newAsset));
+});

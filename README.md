@@ -43,6 +43,9 @@ npx @11ty/import [type] [target] --overwrite
 # Allow draft entries to overwrite existing files (bypasses --overwrite)
 npx @11ty/import [type] [target] --overwrite-allow=drafts
 
+# Delete unreferenced asset files (e.g. from earlier imports) in imported post folders
+npx @11ty/import [type] [target] --prune
+
 # Change local fetch cache duration (default: 24h)
 npx @11ty/import [type] [target] --cacheduration=20m
 
@@ -312,6 +315,7 @@ importer.setFetchRetries(2); // for timeouts, network errors, 408, 429, and 5xx 
 importer.setVerbose(true); // --quiet
 importer.setSafeMode(false); // --overwrite
 importer.setDryRun(false); // --dryrun
+importer.setPruneAssets(false); // --prune
 importer.setDraftsFolder("drafts");
 importer.setAssetsFolder("assets");
 importer.setAssetReferenceType("relative"); // --assetrefs

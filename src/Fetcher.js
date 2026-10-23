@@ -68,6 +68,11 @@ class Fetcher {
 		return `${Fetcher.trimFilename(filename)}-${hash}${fileExtensionFallback ? `.${fileExtensionFallback}` : ""}`;
 	}
 
+	// Matches filenames from getFilenameFromSrc
+	static isAssetFilename(filename) {
+		return new RegExp(`-[A-Za-z0-9]{${HASH_FILENAME_MAXLENGTH}}(\\.[^.]+)?$`).test(filename);
+	}
+
 	static trimFilename(filename) {
 		return filename.slice(0, MAXIMUM_URL_FILENAME_SIZE).replace(/-+$/, "");
 	}
@@ -130,6 +135,10 @@ class Fetcher {
 
 	setAssetsFolder(folder) {
 		this.#assetsFolder = folder;
+	}
+
+	getAssetsFolder() {
+		return this.#assetsFolder;
 	}
 
 	setDownloadAssets(download) {

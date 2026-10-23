@@ -81,8 +81,10 @@ class Importer {
 		this.dryRun = false;
 		this.safeMode = true;
 		this.allowDraftsToOverwrite = false;
+		this.pruneAssets = false;
 		this.counts = {
-			files: 0
+			files: 0,
+			pruned: 0,
 		};
 
 		this.markdownService = new MarkdownToHtml();
@@ -137,6 +139,11 @@ class Importer {
 		this.safeMode = Boolean(safeMode);
 
 		this.fetcher.setSafeMode(safeMode);
+	}
+
+	// --prune
+	setPruneAssets(prune) {
+		this.pruneAssets = Boolean(prune);
 	}
 
 	setDryRun(isDryRun) {
@@ -912,6 +919,8 @@ class Importer {
 	// TODO options.pathPrefix
 	async toFiles(entries = []) {
 		let filepathConflicts = {};
+		let postDirectories = new Set();
+		let fileContents = new Map();
 
 		for(let entry of entries) {
 			let pathname = entry.filePath;
@@ -937,6 +946,9 @@ class Importer {
 					}
 					continue;
 				}
+
+				postDirectories.add(DirectoryManager.getDirectory(pathname));
+				fileContents.set(pathname, content);
 
 				if(fs.existsSync(pathname) && Importer.getImportHash(pathname) === hash) {
 					if(this.isVerbose) {
@@ -969,6 +981,7 @@ class Importer {
 			let commentsContent = existing && Importer.convertCommentsToJson(entry, existing.data, { replace });
 			if(commentsContent !== undefined && commentsContent !== existing.raw) {
 				this.#dataFiles.set(commentsPathname, commentsContent);
+				fileContents.set(commentsPathname, commentsContent);
 				files.push({ pathname: commentsPathname, content: commentsContent, type: "comments" });
 
 				if(this.isVerbose) {
@@ -995,6 +1008,67 @@ class Importer {
 				}
 			}
 		}
+
+		if(this.pruneAssets) {
+			this.#pruneAssets(postDirectories, fileContents);
+		}
+	}
+
+	static TEXT_FILE_EXTENSIONS = ["md", "markdown", "html", "htm", "json", "yaml", "yml", "js", "cjs", "mjs", "njk", "liquid"];
+
+	// Removes generated asset files (e.g. from earlier imports) in imported post folders that weren’t used in this import and aren’t referenced by any file in the folder
+	#pruneAssets(directories, fileContents) {
+		// Shared root folder may hold assets for posts outside of this import
+		if(this.#assetReferenceType !== "relative" && this.#assetReferenceType !== "colocate") {
+			return;
+		}
+
+		// Failed downloads aren’t referenced locally, so don’t delete the only copy
+		if(this.fetcher.errors.size > 0) {
+			if(this.isVerbose) {
+				Logger.warning("Skipping --prune because of fetch errors");
+			}
+			return;
+		}
+
+		for(let dir of directories) {
+			let assetDir = Utils.pathJoin(dir || ".", this.fetcher.getAssetsFolder());
+			if(!fs.existsSync(assetDir)) {
+				continue;
+			}
+
+			let candidates = fs.readdirSync(assetDir, { withFileTypes: true }).filter(file => {
+				return file.isFile() && Fetcher.isAssetFilename(file.name) && !this.fetcher.writtenAssetFiles.has(Utils.pathJoin(assetDir, file.name));
+			}).map(file => file.name);
+
+			if(!candidates.length) {
+				continue;
+			}
+
+			// Contents written in this run (also for --dryrun) take precedence over the file system
+			let references = fs.readdirSync(dir || ".", { withFileTypes: true }).filter(file => {
+				return file.isFile() && !Fetcher.isAssetFilename(file.name) && Importer.TEXT_FILE_EXTENSIONS.includes(file.name.split(".").pop());
+			}).map(file => {
+				let pathname = Utils.pathJoin(dir, file.name);
+				return fileContents.get(pathname) ?? fs.readFileSync(pathname, "utf8");
+			});
+
+			for(let name of candidates) {
+				if(references.some(content => content.includes(name))) {
+					continue;
+				}
+
+				let pathname = Utils.pathJoin(assetDir, name);
+				if(this.isVerbose) {
+					Logger.cleanup("stale asset", pathname, { dryRun: this.dryRun });
+				}
+
+				this.counts.pruned++;
+				if(!this.dryRun) {
+					fs.unlinkSync(pathname);
+				}
+			}
+		}
 	}
 
 	logResults() {
@@ -1007,6 +1081,9 @@ class Importer {
 		content.push(kleur.green(`${counts.assets - counts.cleaned} ${Logger.plural(counts.assets - counts.cleaned, "asset")}`));
 		if(counts.cleaned) {
 			content.push(kleur.gray(`(${counts.cleaned} cleaned, unused)`));
+		}
+		if(counts.pruned) {
+			content.push(kleur.gray(`(${counts.pruned} pruned, stale)`));
 		}
 		content.push(kleur.green(`from ${sourcesDisplay}`));
 		if(counts.persist) {
