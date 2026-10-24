@@ -14,6 +14,8 @@ export class Twitter extends DataSource {
 	static ENTITY_PATTERN = /https:\/\/t\.co\/\w+|@\w{1,15}/g;
 	// Your own replies in a thread are comments on the first tweet
 	static SUPPORTS_COMMENTS = true;
+	// Counts are frozen when the archive was downloaded
+	static SUPPORTS_COUNTS = true;
 	static COMMENT_ASSETS = true;
 
 	#archive;
@@ -269,6 +271,14 @@ export class Twitter extends DataSource {
 			contentType: "html",
 			metadata,
 		};
+
+		let counts = DataSource.cleanCounts({
+			likes: tweet.favorite_count,
+			reposts: tweet.retweet_count,
+		});
+		if(counts) {
+			cleanEntry.counts = counts;
+		}
 
 		if(this.shouldIncludeComments()) {
 			let comments = this.#getComments(tweet);

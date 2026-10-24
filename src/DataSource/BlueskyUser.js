@@ -13,6 +13,7 @@ export class BlueskyUser extends DataSource {
 	static PER_PAGE = 100;
 	static THREAD_DEPTH = 100;
 	static SUPPORTS_COMMENTS = true;
+	static SUPPORTS_COUNTS = true;
 	static DECODE_HTML = false;
 	// Author setting: “Discourage apps from showing my account to logged-out users”
 	static NO_UNAUTHENTICATED_LABEL = "!no-unauthenticated";
@@ -265,6 +266,12 @@ export class BlueskyUser extends DataSource {
 	async cleanEntry(post) {
 		let { created } = this.getRawEntryDates(post);
 		let url = BlueskyUser.getPostUrl(post);
+		let counts = DataSource.cleanCounts({
+			likes: post.likeCount,
+			reposts: post.repostCount,
+			comments: post.replyCount,
+			quotes: post.quoteCount,
+		});
 		let content = "";
 		if(this.shouldIncludeContent()) {
 			content = [
@@ -288,6 +295,7 @@ export class BlueskyUser extends DataSource {
 			metadata: {
 				slug: path.basename(BlueskyUser.getFilePath(url)),
 			},
+			...(counts ? { counts } : {}),
 		};
 	}
 

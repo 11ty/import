@@ -44,7 +44,8 @@ test("YouTube user", async (t) => {
 
 	let [post] = entries;
 
-	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "date", "dateUpdated", "filePath", "metadata", "outputContentType", "title", "type", "url", "uuid"]);
+	assert.deepEqual(Object.keys(post).sort(), ["authors", "content", "contentType", "counts", "date", "dateUpdated", "filePath", "metadata", "outputContentType", "title", "type", "url", "uuid"]);
+	assert.deepEqual(post.counts, { likes: 13, views: 598 });
 	assert.equal(post.metadata.media.featuredImage, "https://i4.ytimg.com/vi/kNI_LcbvtNk/hqdefault.jpg");
 	assert.equal(post.metadata.slug, "kNI_LcbvtNk");
 	assert.equal(post.contentType, "markdown");
@@ -1707,6 +1708,53 @@ test("Escaped HTML stays escaped for JSON sources, Atom feeds are decoded", asyn
 	assert.equal(item.content, "<p>Hi</p>");
 });
 
+test("Bluesky and Fediverse counts", async (t) => {
+	let importer = getCommentsImporter("fediverse", { url: "@eleventy@fosstodon.org", comments: false });
+	let account = { id: "1", acct: "eleventy", url: "https://fosstodon.org/@eleventy" };
+	let statusesUrl = "https://fosstodon.org/api/v1/accounts/1/statuses?limit=40&exclude_replies=true&exclude_reblogs=true";
+	importer.addDataOverride("fediverse", "https://fosstodon.org/api/v1/accounts/lookup?acct=eleventy", account);
+	importer.addDataOverride("fediverse", statusesUrl, [
+		{ id: "2", created_at: "2024-01-02T00:00:00.000Z", url: "https://fosstodon.org/@eleventy/2", content: "<p>Hi</p>", account, favourites_count: 5, reblogs_count: 2, replies_count: 0, quotes_count: 1 },
+		{ id: "1", created_at: "2024-01-01T00:00:00.000Z", url: "https://fosstodon.org/@eleventy/1", content: "<p>Quiet</p>", account, favourites_count: 0, reblogs_count: 0, replies_count: 0 },
+	]);
+	importer.addDataOverride("fediverse", `${statusesUrl}&max_id=1`, []);
+
+	let [status, quiet] = await importer.getEntries({ contentType: "html" });
+	assert.deepEqual(status.counts, { likes: 5, reposts: 2, quotes: 1 });
+	assert.equal(quiet.counts, undefined);
+
+	let feed = getBlueskyFeed();
+	Object.assign(feed.feed[0].post, { likeCount: 12, repostCount: 3, replyCount: 4, quoteCount: 0 });
+	let bluesky = getCommentsImporter("bluesky", { url: "zachleat.com", comments: false });
+	bluesky.addDataOverride("bluesky", BLUESKY_FEED_URL, feed);
+	let [post] = await bluesky.getEntries();
+	assert.deepEqual(post.counts, { likes: 12, reposts: 3, comments: 4 });
+});
+
+test("Counts are replaced by their post source and kept by data only sources", async (t) => {
+	let post = counts => ({ source: { constructor: { TYPE: "bluesky" } }, ...(counts ? { counts } : {}) });
+	let webmentions = { source: { constructor: { TYPE: "webmention", DATA_ONLY: true } }, likes: [{ id: 1, date: "2024-01-01T00:00:00.000Z" }] };
+
+	let data = JSON.parse(Importer.convertCommentsToJson(post({ likes: 2 })));
+	assert.deepEqual(data.counts, { likes: 2, via: "bluesky" });
+
+	data = JSON.parse(Importer.convertCommentsToJson(webmentions, data));
+	assert.deepEqual(data.counts, { likes: 2, via: "bluesky" });
+	assert.equal(data.likes.length, 1);
+
+	data = JSON.parse(Importer.convertCommentsToJson(post({ likes: 3, reposts: 1 }), data, { replace: false }));
+	assert.deepEqual(data.counts, { likes: 3, reposts: 1, via: "bluesky" });
+
+	// Dropped to zero
+	data = JSON.parse(Importer.convertCommentsToJson(post(), data, { replace: false }));
+	assert.equal(data.counts, undefined);
+	assert.equal(data.likes.length, 1);
+
+	// Another post source’s counts are kept
+	data = JSON.parse(Importer.convertCommentsToJson({ source: { constructor: { TYPE: "fediverse" } } }, { counts: { likes: 1, via: "bluesky" } }));
+	assert.deepEqual(data.counts, { likes: 1, via: "bluesky" });
+});
+
 test("Fediverse access token is only sent to the user’s server API", async (t) => {
 	withEnv(t, { MASTODON_ACCESS_TOKEN: "FAKE_TOKEN" });
 
@@ -2185,6 +2233,8 @@ test("Substack", async (t) => {
 		publishedBylines: [{ name: "Jane", handle: "jane", photo_url: "https://substackcdn.com/jane.png" }],
 		body_html: `<p>Hello <a href="https://example.substack.com/p/paid">world</a>.</p>`,
 		comment_count: 2,
+		reaction_count: 5,
+		restacks: 1,
 	});
 	importer.addDataOverride("substack", "https://example.substack.com/api/v1/posts/paid", {
 		id: 2,
@@ -2208,6 +2258,8 @@ test("Substack", async (t) => {
 	});
 
 	let [post, paid] = await importer.getEntries({ contentType: "markdown" });
+	assert.deepEqual(post.counts, { likes: 5, reposts: 1, comments: 2 });
+	assert.equal(paid.counts, undefined);
 	assert.equal(post.uuid, "11ty/import::substack::1");
 	assert.equal(post.title, "First & best");
 	assert.equal(post.url, "https://example.substack.com/p/first");
@@ -2485,6 +2537,7 @@ test("DEV", async (t) => {
 		tag_list: "webdev, css",
 		tags: ["webdev", "css"],
 		body_html: `<p>Hello <a href="https://dev.to/jane/other">other</a></p>`,
+		public_reactions_count: 7,
 		user,
 	});
 	importer.addDataOverride("devto", "https://dev.to/api/comments?a_id=1", [{
@@ -2496,6 +2549,7 @@ test("DEV", async (t) => {
 	}]);
 
 	let [post] = await importer.getEntries({ contentType: "markdown" });
+	assert.deepEqual(post.counts, { likes: 7, comments: 1 });
 	assert.equal(post.uuid, "11ty/import::devto::1");
 	assert.equal(post.filePath, "jane/hello-1abc.md");
 	assert.equal(post.description, "A description");
@@ -3386,7 +3440,7 @@ test("Fediverse default origin limit", async (t) => {
 });
 
 const INSTAGRAM_API = "https://graph.instagram.com/v23.0";
-const INSTAGRAM_FIELDS = "id%2Ccaption%2Cmedia_type%2Cmedia_product_type%2Cmedia_url%2Cpermalink%2Cthumbnail_url%2Ctimestamp%2Cchildren%7Bid%2Cmedia_type%2Cmedia_url%2Cthumbnail_url%7D";
+const INSTAGRAM_FIELDS = "id%2Ccaption%2Cmedia_type%2Cmedia_product_type%2Cmedia_url%2Cpermalink%2Cthumbnail_url%2Ctimestamp%2Clike_count%2Ccomments_count%2Cchildren%7Bid%2Cmedia_type%2Cmedia_url%2Cthumbnail_url%7D";
 
 function getInstagramImporter(t, target = "@ZachLeat") {
 	withEnv(t, { INSTAGRAM_ACCESS_TOKEN: "secret" });
@@ -3410,7 +3464,7 @@ function getInstagramImporter(t, target = "@ZachLeat") {
 	});
 	importer.addDataOverride("instagram", `${INSTAGRAM_API}/me/media?after=cursor&access_token=secret`, {
 		data: [
-			{ id: "1", media_type: "IMAGE", media_product_type: "FEED", caption: "Hello @eleven_ty & friends #11ty #café\nSecond line\n\nSee https://www.11ty.dev/docs/. Email me@example.com", media_url: "https://scontent.cdninstagram.com/one.jpg", permalink: "https://www.instagram.com/p/AAA/", timestamp: "2023-01-01T12:00:00+0000" },
+			{ id: "1", media_type: "IMAGE", media_product_type: "FEED", caption: "Hello @eleven_ty & friends #11ty #café\nSecond line\n\nSee https://www.11ty.dev/docs/. Email me@example.com", media_url: "https://scontent.cdninstagram.com/one.jpg", permalink: "https://www.instagram.com/p/AAA/", timestamp: "2023-01-01T12:00:00+0000", like_count: 9, comments_count: 0 },
 		],
 	});
 	return importer;
@@ -3428,6 +3482,7 @@ test("Instagram", async (t) => {
 	assert.equal(photo.url, "https://www.instagram.com/p/AAA/");
 	assert.deepEqual(photo.date, new Date("2023-01-01T12:00:00.000Z"));
 	assert.deepEqual(photo.metadata, { id: "1", slug: "AAA", postType: "post" });
+	assert.deepEqual(photo.counts, { likes: 9 });
 	assert.deepEqual(photo.authors, [{ name: "Zach Leatherman", url: "https://www.instagram.com/zachleat/", avatarUrl: "https://scontent.cdninstagram.com/avatar.jpg" }]);
 	assert.equal(photo.content, [
 		`Hello [@eleven\\_ty](https://www.instagram.com/eleven_ty/) & friends [#11ty](https://www.instagram.com/explore/tags/11ty/) [#café](https://www.instagram.com/explore/tags/caf%C3%A9/)  `,
@@ -3625,7 +3680,7 @@ test("GitHub repositories", async (t) => {
 
 	let owner = { login: "11ty", html_url: "https://github.com/11ty" };
 	importer.addDataOverride("github", "https://api.github.com/users/11ty/repos?type=owner&sort=created&direction=desc&per_page=100&page=1", [
-		{ full_name: "11ty/eleventy", name: "eleventy", html_url: "https://github.com/11ty/eleventy", owner, description: "A simpler site generator.", created_at: "2017-11-01T00:00:00Z", pushed_at: "2026-10-01T00:00:00Z", stargazers_count: 18000, language: "JavaScript", license: { spdx_id: "MIT" }, homepage: "https://www.11ty.dev/", topics: ["ssg"] },
+		{ full_name: "11ty/eleventy", name: "eleventy", html_url: "https://github.com/11ty/eleventy", owner, description: "A simpler site generator.", created_at: "2017-11-01T00:00:00Z", pushed_at: "2026-10-01T00:00:00Z", stargazers_count: 18000, forks_count: 500, language: "JavaScript", license: { spdx_id: "MIT" }, homepage: "https://www.11ty.dev/", topics: ["ssg"] },
 		{ full_name: "11ty/fork", name: "fork", fork: true, html_url: "https://github.com/11ty/fork", owner, created_at: "2020-01-01T00:00:00Z" },
 		{ full_name: "11ty/empty", name: "empty", html_url: "https://github.com/11ty/empty", owner, description: "No README", created_at: "2016-01-01T00:00:00Z", pushed_at: "2016-01-01T00:00:00Z", stargazers_count: 0, archived: true, license: { spdx_id: "NOASSERTION" } },
 	]);
@@ -3641,10 +3696,12 @@ test("GitHub repositories", async (t) => {
 	assert.equal(eleventy.description, "A simpler site generator.");
 	assert.deepEqual(eleventy.dateUpdated, new Date("2026-10-01T00:00:00Z"));
 	assert.deepEqual(eleventy.tags, ["ssg"]);
-	assert.deepEqual(eleventy.metadata, { name: "11ty/eleventy", stars: 18000, language: "JavaScript", license: "MIT", homepage: "https://www.11ty.dev/", tags: ["ssg"] });
+	assert.deepEqual(eleventy.metadata, { name: "11ty/eleventy", language: "JavaScript", license: "MIT", homepage: "https://www.11ty.dev/", tags: ["ssg"] });
+	assert.deepEqual(eleventy.counts, { stars: 18000, forks: 500 });
 	assert.equal(eleventy.content, "# Eleventy\n\n![Logo](https://raw.githubusercontent.com/11ty/eleventy/HEAD/docs/logo.png) See [docs](https://github.com/11ty/eleventy/blob/HEAD/docs/README.md).");
 
-	assert.deepEqual(empty.metadata, { name: "11ty/empty", stars: 0, archived: true });
+	assert.deepEqual(empty.metadata, { name: "11ty/empty", archived: true });
+	assert.equal(empty.counts, undefined);
 	assert.equal(empty.content, "No README");
 
 	let [source] = importer.getSources();
@@ -3876,7 +3933,7 @@ test("Letterboxd user", async (t) => {
 	assert.ok(list.content.includes(`<a href="https://letterboxd.com/film/edge-of-tomorrow/">Edge of Tomorrow</a>`));
 });
 
-const FLICKR_PHOTOS_URL = "https://api.flickr.com/services/rest/?method=flickr.people.getPublicPhotos&user_id=12345678%40N00&extras=description%2Cdate_upload%2Cdate_taken%2Clast_update%2Ctags%2Cgeo%2Cmedia%2Cpath_alias%2Cowner_name%2Curl_o%2Curl_k%2Curl_h%2Curl_l%2Curl_c%2Curl_z&per_page=500&page=PAGE&format=json&nojsoncallback=1&api_key=secret";
+const FLICKR_PHOTOS_URL = "https://api.flickr.com/services/rest/?method=flickr.people.getPublicPhotos&user_id=12345678%40N00&extras=description%2Cdate_upload%2Cdate_taken%2Clast_update%2Ctags%2Cgeo%2Cmedia%2Cpath_alias%2Cowner_name%2Curl_o%2Curl_k%2Curl_h%2Curl_l%2Curl_c%2Curl_z%2Cviews%2Ccount_faves%2Ccount_comments&per_page=500&page=PAGE&format=json&nojsoncallback=1&api_key=secret";
 
 function flickrPhoto(id, extra = {}) {
 	return {
@@ -3920,6 +3977,9 @@ test("Flickr user", async (t) => {
 				latitude: "37.7749",
 				longitude: "-122.4194",
 				url_o: "https://live.staticflickr.com/1/2_o.jpg",
+				views: "42",
+				count_faves: "3",
+				count_comments: "0",
 			}),
 		],
 		[
@@ -3931,6 +3991,8 @@ test("Flickr user", async (t) => {
 	let [photo, video] = await importer.getEntries({ contentType: "html" });
 
 	assert.equal(photo.uuid, "11ty/import::flickr::2");
+	assert.deepEqual(photo.counts, { likes: 3, views: 42 });
+	assert.equal(video.counts, undefined);
 	assert.equal(photo.url, "https://www.flickr.com/photos/zachleat/2/");
 	assert.equal(photo.title, "Photo 2");
 	assert.deepEqual(photo.date, new Date("2024-01-01T00:00:00Z"));

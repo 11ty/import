@@ -8,6 +8,7 @@ export class Substack extends DataSource {
 	static DECODE_HTML = false;
 	static PER_PAGE = 25;
 	static SUPPORTS_COMMENTS = true;
+	static SUPPORTS_COUNTS = true;
 
 	#offset = 0;
 	#commentCounts = new Map();
@@ -160,6 +161,15 @@ export class Substack extends DataSource {
 
 		if(tags.length) {
 			cleanEntry.tags = tags;
+		}
+
+		let counts = DataSource.cleanCounts({
+			likes: post.reaction_count ?? rawEntry.reaction_count,
+			reposts: post.restacks ?? rawEntry.restacks,
+			comments: post.comment_count ?? rawEntry.comment_count,
+		});
+		if(counts) {
+			cleanEntry.counts = counts;
 		}
 
 		return cleanEntry;

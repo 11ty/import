@@ -11,6 +11,8 @@ export class GitHub extends DataSource {
 	static API = "https://api.github.com";
 	static WEBSITE = "https://github.com";
 	static PER_PAGE = 100;
+	// Repository lists have no real watcher count (`watchers_count` is stars)
+	static SUPPORTS_COUNTS = true;
 
 	#markdown = new MarkdownIt({ html: true, linkify: true });
 
@@ -161,7 +163,6 @@ export class GitHub extends DataSource {
 
 		let metadata = {
 			name: repo.full_name,
-			stars: repo.stargazers_count,
 		};
 		if(repo.language) {
 			metadata.language = repo.language;
@@ -191,6 +192,14 @@ export class GitHub extends DataSource {
 
 		if(repo.description) {
 			entry.description = repo.description;
+		}
+
+		let counts = DataSource.cleanCounts({
+			stars: repo.stargazers_count,
+			forks: repo.forks_count,
+		});
+		if(counts) {
+			entry.counts = counts;
 		}
 
 		let tags = repo.topics || [];

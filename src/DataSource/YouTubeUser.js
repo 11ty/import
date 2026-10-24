@@ -7,6 +7,7 @@ export class YouTubeUser extends DataSource {
 	static API = "https://www.googleapis.com/youtube/v3/";
 	// Requires a YOUTUBE_API_KEY environment variable
 	static SUPPORTS_COMMENTS = true;
+	static SUPPORTS_COUNTS = true;
 
 	constructor(channelId) {
 		super();
@@ -44,6 +45,11 @@ export class YouTubeUser extends DataSource {
 	cleanEntry(rawEntry) {
 		let { created, updated } = this.getRawEntryDates(rawEntry);
 		let featuredImage = MediaRss.getFeaturedImageUrl(rawEntry);
+		let community = rawEntry['media:group']?.['media:community'];
+		let counts = DataSource.cleanCounts({
+			likes: community?.['media:starRating']?.['@_count'],
+			views: community?.['media:statistics']?.['@_views'],
+		});
 
 		return {
 			uuid: this.getUniqueIdFromEntry(rawEntry),
@@ -64,6 +70,7 @@ export class YouTubeUser extends DataSource {
 				slug: rawEntry['yt:videoId'],
 				...(featuredImage ? { media: { featuredImage } } : {}),
 			},
+			...(counts ? { counts } : {}),
 		}
 	}
 

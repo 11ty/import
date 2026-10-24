@@ -8,7 +8,8 @@ export class Flickr extends DataSource {
 	static DECODE_HTML = false;
 	static API = "https://api.flickr.com/services/rest/";
 	static PER_PAGE = 500;
-	static EXTRAS = ["description", "date_upload", "date_taken", "last_update", "tags", "geo", "media", "path_alias", "owner_name", "url_o", "url_k", "url_h", "url_l", "url_c", "url_z"];
+	static SUPPORTS_COUNTS = true;
+	static EXTRAS = ["description", "date_upload", "date_taken", "last_update", "tags", "geo", "media", "path_alias", "owner_name", "url_o", "url_k", "url_h", "url_l", "url_c", "url_z", "views", "count_faves", "count_comments"];
 	// Largest available size first (originals can be private)
 	static SIZES = ["o", "k", "h", "l", "c", "z"];
 
@@ -209,6 +210,15 @@ export class Flickr extends DataSource {
 		if(tags.length) {
 			metadata.tags = tags;
 			cleanEntry.tags = tags;
+		}
+
+		let counts = DataSource.cleanCounts({
+			likes: photo.count_faves,
+			comments: photo.count_comments,
+			views: photo.views,
+		});
+		if(counts) {
+			cleanEntry.counts = counts;
 		}
 
 		return cleanEntry;

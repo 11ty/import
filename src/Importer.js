@@ -861,7 +861,7 @@ class Importer {
 	}
 
 	static hasData(entry) {
-		return Importer.DATA_KEYS.some(key => Array.isArray(entry[key]));
+		return Boolean(entry.counts) || Importer.DATA_KEYS.some(key => Array.isArray(entry[key]));
 	}
 
 	// Merges into an existing data file: each item has a `via` (source type) and a source only replaces its own items
@@ -896,6 +896,15 @@ class Importer {
 				data[key] = items;
 			} else {
 				delete data[key];
+			}
+		}
+
+		// Counts belong to the post source and are always replaced
+		if(!isDataOnly) {
+			if(entry.counts) {
+				data.counts = { ...entry.counts, via };
+			} else if(existingData.counts?.via === via) {
+				delete data.counts;
 			}
 		}
 
@@ -982,7 +991,8 @@ class Importer {
 			// Data only sources and complete comments replace their items, incomplete comments are merged
 			let replace = isDataOnly || this.#completeComments.has(entry);
 			let commentsPathname = Importer.getCommentsFilePath(pathname);
-			let existing = (replace || Importer.hasData(entry)) ? this.#readDataFile(commentsPathname) : undefined;
+			// Sources with counts also read it to remove counts that dropped to zero
+			let existing = (replace || Importer.hasData(entry) || entry.source?.constructor.SUPPORTS_COUNTS) ? this.#readDataFile(commentsPathname) : undefined;
 			let commentsContent = existing && Importer.convertCommentsToJson(entry, existing.data, { replace });
 			if(commentsContent !== undefined && commentsContent !== existing.raw) {
 				this.#dataFiles.set(commentsPathname, commentsContent);

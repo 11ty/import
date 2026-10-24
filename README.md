@@ -267,6 +267,17 @@ The data file can also have `likes`, `reposts`, `bookmarks`, and `rsvps` arrays,
 
 Sources share the data file: a source only replaces its own items (matching `via`) and other keys are kept. Items are sorted by date.
 
+Some sources also add a `counts` object (e.g. `{ "likes": 12, "reposts": 3, "comments": 4, "via": "bluesky" }`) from data already requested for the post (zeros are omitted). Counts are replaced on every import of an unedited post.
+
+- `bluesky`, `fediverse`: `likes`, `reposts`, `comments`, `quotes`
+- `youtubeuser`: `likes`, `views`
+- `flickr`: `likes` (faves), `comments`, `views`
+- `devto`: `likes` (reactions), `comments`
+- `substack`: `likes` (reactions), `reposts` (restacks), `comments`
+- `instagram`: `likes` (unless hidden), `comments`
+- `twitter`: `likes`, `reposts` (as of the archive download)
+- `github` (repositories): `stars`, `forks`
+
 Comments deleted upstream are removed when a post is reimported (`--overwrite`). If a comment request fails, existing comments are kept and fetched ones are updated.
 
 Comments with content warnings or from authors that opted out of wider distribution have `private: true` and only `id`, `parentId`, `url`, and `date` (link to them instead).

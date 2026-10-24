@@ -9,6 +9,8 @@ class DataSource {
 	static UUID_PREFIX = "11ty/import";
 	// Sources set `entry.comments` in `cleanEntry` or fetch them in `addComments(entries)`
 	static SUPPORTS_COMMENTS = false;
+	// Sources set `entry.counts` in `cleanEntry` (no extra requests)
+	static SUPPORTS_COUNTS = false;
 	// Downloads assets in comment content and avatars (e.g. your own media in a thread)
 	static COMMENT_ASSETS = false;
 	// HTML content is entity-encoded (e.g. from XML) and decoded for HTML output
@@ -163,6 +165,14 @@ class DataSource {
 		comment.date = date;
 		comment.content = content || "";
 		return comment;
+	}
+
+	// Native interaction counts, keyed like data file arrays (numeric strings are converted, zeros are dropped)
+	static cleanCounts(counts = {}) {
+		let cleaned = Object.fromEntries(Object.entries(counts).map(([key, value]) => [key, Number(value)]).filter(([key, value]) => Number.isInteger(value) && value > 0));
+		if(Object.keys(cleaned).length) {
+			return cleaned;
+		}
 	}
 
 	static sortComments(comments) {

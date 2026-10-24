@@ -9,7 +9,9 @@ export class Instagram extends DataSource {
 	static DECODE_HTML = false;
 	static API = "https://graph.instagram.com/v23.0";
 	static PER_PAGE = 100;
-	static MEDIA_FIELDS = "id,caption,media_type,media_product_type,media_url,permalink,thumbnail_url,timestamp,children{id,media_type,media_url,thumbnail_url}";
+	// Counts are in the same request (`like_count` is missing when likes are hidden)
+	static SUPPORTS_COUNTS = true;
+	static MEDIA_FIELDS = "id,caption,media_type,media_product_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count,children{id,media_type,media_url,thumbnail_url}";
 	static CAPTION_PATTERN = /https?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]}']|(?<![\w@])@[\w.]*\w|(?<![\p{L}\p{N}_&#])#[\p{L}\p{N}_]+/gu;
 
 	#profile = {};
@@ -168,6 +170,10 @@ export class Instagram extends DataSource {
 	cleanEntry(media) {
 		let { created } = this.getRawEntryDates(media);
 		let shortcode = Instagram.getFilePath(media.permalink).split("/").pop();
+		let counts = DataSource.cleanCounts({
+			likes: media.like_count,
+			comments: media.comments_count,
+		});
 
 		return {
 			uuid: this.getUniqueIdFromEntry(media),
@@ -183,6 +189,7 @@ export class Instagram extends DataSource {
 				slug: shortcode,
 				postType: media.media_product_type === "REELS" ? "reel" : "post",
 			},
+			...(counts ? { counts } : {}),
 		};
 	}
 }

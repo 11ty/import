@@ -8,6 +8,7 @@ export class DevTo extends DataSource {
 	static API = "https://dev.to/api/";
 	static PER_PAGE = 100;
 	static SUPPORTS_COMMENTS = true;
+	static SUPPORTS_COUNTS = true;
 	static MAX_RETRIES = 5;
 	static DEFAULT_RETRY_SECONDS = 5;
 
@@ -136,6 +137,14 @@ export class DevTo extends DataSource {
 
 		if(article.description) {
 			cleanEntry.description = article.description;
+		}
+
+		let counts = DataSource.cleanCounts({
+			likes: article.public_reactions_count ?? rawEntry.public_reactions_count,
+			comments: article.comments_count ?? rawEntry.comments_count,
+		});
+		if(counts) {
+			cleanEntry.counts = counts;
 		}
 
 		if(tags.length) {

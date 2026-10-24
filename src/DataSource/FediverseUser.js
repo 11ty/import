@@ -12,6 +12,7 @@ export class FediverseUser extends DataSource {
 	// Mastodon allows 300 requests per 5 minutes, see `Fetcher` for `x-ratelimit-*` handling
 	static CONCURRENCY = 4;
 	static SUPPORTS_COMMENTS = true;
+	static SUPPORTS_COUNTS = true;
 	static MEDIUMS = {
 		image: "image",
 		gifv: "video",
@@ -128,6 +129,12 @@ export class FediverseUser extends DataSource {
 	cleanEntry(status) {
 		let { created, updated } = this.getRawEntryDates(status);
 		let account = status.account || this.#account;
+		let counts = DataSource.cleanCounts({
+			likes: status.favourites_count,
+			reposts: status.reblogs_count,
+			comments: status.replies_count,
+			quotes: status.quotes_count,
+		});
 
 		return {
 			uuid: this.getUniqueIdFromEntry(status),
@@ -145,6 +152,7 @@ export class FediverseUser extends DataSource {
 			metadata: {
 				slug: status.id,
 			},
+			...(counts ? { counts } : {}),
 		};
 	}
 
