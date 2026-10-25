@@ -276,7 +276,7 @@ Some sources also add a `counts` object (e.g. `{ "likes": 12, "reposts": 3, "com
 - `substack`: `likes` (reactions), `reposts` (restacks), `comments`
 - `instagram`: `likes` (unless hidden), `comments`
 - `twitter`: `likes`, `reposts` (as of the archive download)
-- `github` (repositories): `stars`, `forks`
+- `github` (repositories): `stars`, `forks`, `issues` and `pullRequests` (all-time totals, requires a `GITHUB_TOKEN` environment variable)
 
 Comments deleted upstream are removed when a post is reimported (`--overwrite`). If a comment request fails, existing comments are kept and fetched ones are updated.
 

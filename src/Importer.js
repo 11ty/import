@@ -85,6 +85,7 @@ class Importer {
 		this.pruneAssets = false;
 		this.counts = {
 			files: 0,
+			data: 0,
 			pruned: 0,
 		};
 
@@ -121,8 +122,17 @@ class Importer {
 			...this.counts,
 			...fetcherCounts,
 			...this.markdownService.getCounts(),
-			errors: fetcherCounts.errors + this.#documentErrors,
+			errors: fetcherCounts.errors + this.#documentErrors + this.#getFailedPageUrls().filter(url => !this.fetcher.errors.has(url)).length,
 		}
+	}
+
+	#getFailedPageUrls() {
+		return this.sources.flatMap(source => Array.from(source.getFailedPageUrls?.() || []));
+	}
+
+	// Entries are missing because a source failed partway through
+	isIncomplete() {
+		return this.sources.some(source => source.isIncomplete?.());
 	}
 
 	// --overwrite--allow (independent of and bypasses --overwrite)
@@ -988,8 +998,8 @@ class Importer {
 				}
 			}
 
-			// Data only sources and complete comments replace their items, incomplete comments are merged
-			let replace = isDataOnly || this.#completeComments.has(entry);
+			// Data only sources and complete comments replace their items, incomplete comments (or entries) are merged
+			let replace = (isDataOnly && !entry.source?.isIncomplete?.()) || this.#completeComments.has(entry);
 			let commentsPathname = Importer.getCommentsFilePath(pathname);
 			// Sources with counts also read it to remove counts that dropped to zero
 			let existing = (replace || Importer.hasData(entry) || entry.source?.constructor.SUPPORTS_COUNTS) ? this.#readDataFile(commentsPathname) : undefined;
@@ -1006,6 +1016,8 @@ class Importer {
 				}
 
 				if(!this.dryRun) {
+					this.counts.data++;
+
 					this.directoryManager.createDirectoryForPath(commentsPathname);
 					fs.writeFileSync(commentsPathname, commentsContent, { encoding: "utf8" });
 				}
@@ -1027,7 +1039,7 @@ class Importer {
 		}
 
 		// Failed downloads aren’t referenced locally, so don’t delete the only copy
-		if(this.fetcher.errors.size > 0) {
+		if(this.fetcher.errors.size > 0 || this.isIncomplete()) {
 			if(this.isVerbose) {
 				Logger.warning("Skipping --prune because of fetch errors");
 			}
@@ -1079,7 +1091,12 @@ class Importer {
 		let sourcesDisplay = this.getSources().map(source => source.constructor.TYPE_FRIENDLY || source.constructor.TYPE).join(", ");
 		let content = [];
 		content.push(kleur.green("Wrote"));
-		content.push(kleur.green(`${counts.files} ${Logger.plural(counts.files, "document")}`));
+		if(counts.data) {
+			content.push(kleur.green(`${counts.files} ${Logger.plural(counts.files, "document")},`));
+			content.push(kleur.green(`${counts.data} ${Logger.plural(counts.data, "data file")}`));
+		} else {
+			content.push(kleur.green(`${counts.files} ${Logger.plural(counts.files, "document")}`));
+		}
 		content.push(kleur.green("and"));
 		content.push(kleur.green(`${counts.assets - counts.cleaned} ${Logger.plural(counts.assets - counts.cleaned, "asset")}`));
 		if(counts.cleaned) {

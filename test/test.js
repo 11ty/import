@@ -1731,6 +1731,61 @@ test("Bluesky and Fediverse counts", async (t) => {
 	assert.deepEqual(post.counts, { likes: 12, reposts: 3, comments: 4 });
 });
 
+function getFediversePagingImporter(dir) {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setOutputFolder(dir);
+	importer.setAssetReferenceType("colocate");
+	importer.setPruneAssets(true);
+	importer.addSource("fediverse", { url: "@eleventy@fosstodon.org", comments: false });
+	return importer;
+}
+
+const FEDIVERSE_ACCOUNT_URL = "https://fosstodon.org/api/v1/accounts/lookup?acct=eleventy";
+const FEDIVERSE_STATUSES_URL = "https://fosstodon.org/api/v1/accounts/1/statuses?limit=40&exclude_replies=true&exclude_reblogs=true";
+
+test("A failed page keeps entries from earlier pages", async (t) => {
+	let dir = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-paging-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+	// Stale asset from an earlier import isn’t pruned from a partial import
+	let postDir = path.join(dir, "eleventy@fosstodon.org", "1");
+	fs.mkdirSync(postDir, { recursive: true });
+	fs.writeFileSync(path.join(postDir, "old-AAAAAAAAAAAA.png"), "old");
+
+	let importer = getFediversePagingImporter(dir);
+	let account = { id: "1", acct: "eleventy", url: "https://fosstodon.org/@eleventy" };
+	importer.addDataOverride("fediverse", FEDIVERSE_ACCOUNT_URL, account);
+	importer.addDataOverride("fediverse", FEDIVERSE_STATUSES_URL, [{ id: "1", created_at: "2024-01-01T00:00:00.000Z", url: "https://fosstodon.org/@eleventy/1", content: "<p>One</p>", favourites_count: 2, account }]);
+	importer.addDataOverride("fediverse", `${FEDIVERSE_STATUSES_URL}&max_id=1`, new Error("Rate limited (429)"));
+
+	let entries = await importer.getEntries({ contentType: "html", target: "fs" });
+	assert.deepEqual(entries.map(entry => entry.url), ["https://fosstodon.org/@eleventy/1"]);
+
+	await importer.toFiles(entries);
+	assert.ok(fs.existsSync(path.join(postDir, "index.html")));
+	assert.ok(fs.existsSync(path.join(postDir, "old-AAAAAAAAAAAA.png")));
+
+	assert.equal(importer.isIncomplete(), true);
+	assert.equal(importer.getCounts().errors, 1);
+	assert.equal(importer.getCounts().pruned, 0);
+	assert.equal(importer.getCounts().files, 1);
+	assert.equal(importer.getCounts().data, 1);
+});
+
+test("A failed first request throws", async (t) => {
+	let account = { id: "1", acct: "eleventy", url: "https://fosstodon.org/@eleventy" };
+
+	let lookup = getFediversePagingImporter(".");
+	lookup.addDataOverride("fediverse", FEDIVERSE_ACCOUNT_URL, new Error("Rate limited (429)"));
+	await assert.rejects(lookup.getEntries(), /Rate limited/);
+
+	let firstPage = getFediversePagingImporter(".");
+	firstPage.addDataOverride("fediverse", FEDIVERSE_ACCOUNT_URL, account);
+	firstPage.addDataOverride("fediverse", FEDIVERSE_STATUSES_URL, new Error("Rate limited (429)"));
+	await assert.rejects(firstPage.getEntries(), /Rate limited/);
+});
+
 test("Counts are replaced by their post source and kept by data only sources", async (t) => {
 	let post = counts => ({ source: { constructor: { TYPE: "bluesky" } }, ...(counts ? { counts } : {}) });
 	let webmentions = { source: { constructor: { TYPE: "webmention", DATA_ONLY: true } }, likes: [{ id: 1, date: "2024-01-01T00:00:00.000Z" }] };
@@ -3706,6 +3761,64 @@ test("GitHub repositories", async (t) => {
 
 	let [source] = importer.getSources();
 	assert.equal(source.getHeaders("https://api.github.com/repos/11ty/eleventy/readme").Accept, "application/vnd.github.raw+json");
+});
+
+test("GitHub repository issue and pull request counts", async (t) => {
+	withEnv(t, { GITHUB_TOKEN: "secret" });
+	let importer = getImporter();
+	importer.addSource("github", "11ty");
+
+	let owner = { login: "11ty", html_url: "https://github.com/11ty" };
+	importer.addDataOverride("github", "https://api.github.com/users/11ty/repos?type=owner&sort=created&direction=desc&per_page=100&page=1", [
+		{ full_name: "11ty/eleventy", name: "eleventy", html_url: "https://github.com/11ty/eleventy", owner, created_at: "2017-11-01T00:00:00Z", stargazers_count: 18000 },
+		{ full_name: "11ty/fork", name: "fork", fork: true, html_url: "https://github.com/11ty/fork", owner, created_at: "2020-01-01T00:00:00Z" },
+		{ full_name: "11ty/empty", name: "empty", html_url: "https://github.com/11ty/empty", owner, created_at: "2016-01-01T00:00:00Z" },
+	]);
+	importer.addDataOverride("github", "https://api.github.com/users/11ty/repos?type=owner&sort=created&direction=desc&per_page=100&page=2", []);
+	importer.addDataOverride("github", "https://api.github.com/repos/11ty/eleventy/readme", "# Eleventy");
+	importer.addDataOverride("github", "https://api.github.com/repos/11ty/empty/readme", "# Empty");
+	importer.addDataOverride("github", "https://api.github.com/graphql", {
+		data: {
+			r0: { issues: { totalCount: 1200 }, pullRequests: { totalCount: 800 } },
+			r1: { issues: { totalCount: 0 }, pullRequests: { totalCount: 0 } },
+		},
+	});
+
+	let [source] = importer.getSources();
+	let requests = [];
+	let getData = source.getData.bind(source);
+	source.getData = (url, type, showErrors, fetchOptions) => {
+		if(fetchOptions?.body) {
+			requests.push({ url, ...fetchOptions });
+		}
+		return getData(url, type, showErrors, fetchOptions);
+	};
+
+	let [eleventy, empty] = await importer.getEntries({ contentType: "markdown" });
+	assert.deepEqual(eleventy.counts, { stars: 18000, issues: 1200, pullRequests: 800 });
+	assert.equal(empty.counts, undefined);
+
+	// One request per page, forks are skipped
+	assert.equal(requests.length, 1);
+	assert.equal(requests[0].method, "POST");
+	assert.equal(JSON.parse(requests[0].body).query, `{ r0: repository(owner: "11ty", name: "eleventy") { issues { totalCount } pullRequests { totalCount } } r1: repository(owner: "11ty", name: "empty") { issues { totalCount } pullRequests { totalCount } } }`);
+});
+
+test("GitHub repository issue counts are skipped when the request fails", async (t) => {
+	withEnv(t, { GITHUB_TOKEN: "secret" });
+	let importer = getImporter();
+	importer.addSource("github", "11ty");
+
+	let owner = { login: "11ty", html_url: "https://github.com/11ty" };
+	importer.addDataOverride("github", "https://api.github.com/users/11ty/repos?type=owner&sort=created&direction=desc&per_page=100&page=1", [
+		{ full_name: "11ty/eleventy", name: "eleventy", html_url: "https://github.com/11ty/eleventy", owner, created_at: "2017-11-01T00:00:00Z", stargazers_count: 18000, forks_count: 500 },
+	]);
+	importer.addDataOverride("github", "https://api.github.com/users/11ty/repos?type=owner&sort=created&direction=desc&per_page=100&page=2", []);
+	importer.addDataOverride("github", "https://api.github.com/repos/11ty/eleventy/readme", "# Eleventy");
+	importer.addDataOverride("github", "https://api.github.com/graphql", new Error("Unauthorized"));
+
+	let [eleventy] = await importer.getEntries({ contentType: "markdown" });
+	assert.deepEqual(eleventy.counts, { stars: 18000, forks: 500 });
 });
 
 test("GitHub targets", async (t) => {

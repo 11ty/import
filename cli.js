@@ -243,3 +243,6 @@ await importer.toFiles(entries);
 
 importer.logResults();
 
+if(importer.isIncomplete()) {
+	process.exitCode = 1;
+}

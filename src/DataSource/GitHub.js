@@ -1,6 +1,7 @@
 import MarkdownIt from "markdown-it";
 
 import { DataSource } from "../DataSource.js";
+import { Logger } from "../Logger.js";
 import { Npm } from "./Npm.js";
 
 // Releases for a repository (`owner/repo`) or repositories for a user or organization (`owner`)
@@ -15,6 +16,8 @@ export class GitHub extends DataSource {
 	static SUPPORTS_COUNTS = true;
 
 	#markdown = new MarkdownIt({ html: true, linkify: true });
+	// Issue and pull request totals for each page of repositories
+	#issueCounts = new WeakMap();
 
 	constructor(target) {
 		super();
@@ -158,7 +161,42 @@ export class GitHub extends DataSource {
 		}
 	}
 
-	async cleanRepository(repo) {
+	// All-time issue and pull request totals for a page of repositories in one GraphQL request (requires `GITHUB_TOKEN`)
+	async #fetchIssueCounts(repos) {
+		if(!process.env.GITHUB_TOKEN || !repos.length) {
+			return {};
+		}
+
+		let fields = repos.map((repo, index) => {
+			let [owner, name] = repo.full_name.split("/");
+			return `r${index}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { issues { totalCount } pullRequests { totalCount } }`;
+		});
+
+		let url = `${GitHub.API}/graphql`;
+		try {
+			let { data } = await this.getData(url, "json", false, {
+				method: "POST",
+				body: JSON.stringify({ query: `{ ${fields.join(" ")} }` }),
+			});
+			return Object.fromEntries(repos.map((repo, index) => [repo.full_name, data?.[`r${index}`]]).filter(([name, counts]) => counts));
+		} catch(e) {
+			this.fetcher?.clearError(url);
+			if(this.isVerbose) {
+				Logger.error(`Error fetching issue and pull request counts from ${this.getLogUrl(url)}: ${e.message}`);
+			}
+			return {};
+		}
+	}
+
+	// Requested once per page of repositories
+	async getIssueCounts(repo, data = [repo]) {
+		if(!this.#issueCounts.has(data)) {
+			this.#issueCounts.set(data, this.#fetchIssueCounts(this.getEntriesFromData(data)));
+		}
+		return (await this.#issueCounts.get(data))[repo.full_name];
+	}
+
+	async cleanRepository(repo, data) {
 		let { created, updated } = this.getRawEntryDates(repo);
 
 		let metadata = {
@@ -194,9 +232,12 @@ export class GitHub extends DataSource {
 			entry.description = repo.description;
 		}
 
+		let issueCounts = await this.getIssueCounts(repo, data);
 		let counts = DataSource.cleanCounts({
 			stars: repo.stargazers_count,
 			forks: repo.forks_count,
+			issues: issueCounts?.issues?.totalCount,
+			pullRequests: issueCounts?.pullRequests?.totalCount,
 		});
 		if(counts) {
 			entry.counts = counts;
@@ -215,10 +256,10 @@ export class GitHub extends DataSource {
 		return this.isReleases() ? data : data.filter(repo => !repo.fork);
 	}
 
-	async cleanEntry(item) {
+	async cleanEntry(item, data) {
 		if(this.isReleases()) {
 			return this.cleanRelease(item);
 		}
-		return this.cleanRepository(item);
+		return this.cleanRepository(item, data);
 	}
 }

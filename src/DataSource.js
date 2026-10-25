@@ -30,6 +30,8 @@ class DataSource {
 	#limitCount = 0;
 	#until;
 	#untilSkipped = 0;
+	// Failed pages after the first, their entries (and later pages) are missing
+	#failedPageUrls = new Set();
 
 	constructor() {
 		this.isVerbose = true;
@@ -113,6 +115,15 @@ class DataSource {
 
 	static hasIncompleteComments(entry) {
 		return DataSource.#incompleteComments.has(entry);
+	}
+
+	getFailedPageUrls() {
+		return this.#failedPageUrls;
+	}
+
+	// Entries are missing (e.g. a page failed after retries)
+	isIncomplete() {
+		return this.#failedPageUrls.size > 0;
 	}
 
 	resetCommentErrors() {
@@ -313,7 +324,8 @@ class DataSource {
 		return (created || updated)?.getTime() || 0;
 	}
 
-	async getData(url, type, showErrors = true) {
+	// `fetchOptions` are extra request options (e.g. `method` and `body`)
+	async getData(url, type, showErrors = true, fetchOptions = {}) {
 		if(!this.isValidHttpUrl(url)) {
 			throw new Error("Invalid url: " + url);
 		}
@@ -336,6 +348,7 @@ class DataSource {
 			type,
 			...this.getFetchOptions(),
 			fetchOptions: {
+				...fetchOptions,
 				headers: this.getHeaders(url),
 			},
 		}, {
@@ -425,8 +438,17 @@ class DataSource {
 				} catch(e) {
 					let shouldWorry = await this.isErrorWorthWorryingAbout(e);
 					if(shouldWorry) {
-						Logger.error(kleur.red(`Error: ${e.message}`), e);
-						throw e;
+						// Nothing to keep
+						if(pageNumber === 1) {
+							Logger.error(kleur.red(`Error: ${e.message}`), e);
+							throw e;
+						}
+
+						this.#failedPageUrls.add(pagedUrl);
+						if(this.isVerbose) {
+							Logger.error(kleur.red(`Error fetching page ${pageNumber} from ${this.getLogUrl(pagedUrl)}, keeping ${entries.length} ${Logger.plural(entries.length, "entry", "entries")} from earlier pages: ${e.message}`));
+						}
+						return this.finalizeEntries(entries);
 					}
 
 					this.#fetcher?.clearError(pagedUrl);
