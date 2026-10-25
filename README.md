@@ -178,7 +178,7 @@ npx @11ty/import bluesky @11ty.dev
 - `letterboxd` (username, recent diary entries, reviews, and lists from the public RSS feed, with film, rating, and watched date metadata)
 - `linktree` (Linktree username or profile URL)
 - `medium` (extracted Medium export folder path)
-- `npm` (npm username or `@scope` organization, packages they maintain)
+- `npm` (npm username for the releases they published or approved, including trusted publishing to packages they’ve published to, or `@scope` organization for its packages’ releases)
 - `squarespace` (collection, post, or page URL, e.g. a blog home page)
 - `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
 - `typepad` (Typepad blog URL or domain, optionally with a path, from the Wayback Machine)
@@ -220,8 +220,10 @@ npx @11ty/import medium ./medium-export
 # Recent posts are also available via RSS
 npx @11ty/import rss https://medium.com/feed/@zachleat
 
-# Import a page for each package (README, version, and keywords) a user or organization maintains
+# Import a page for each package version a user published
 npx @11ty/import npm zachleat
+
+# Import a page for each package version in an organization
 npx @11ty/import npm @11ty
 
 # Import releases for a repository
@@ -276,7 +278,7 @@ Some sources also add a `counts` object (e.g. `{ "likes": 12, "reposts": 3, "com
 - `substack`: `likes` (reactions), `reposts` (restacks), `comments`
 - `instagram`: `likes` (unless hidden), `comments`
 - `twitter`: `likes`, `reposts` (as of the archive download)
-- `github` (repositories): `stars`, `forks`, `issues` and `pullRequests` (all-time totals, requires a `GITHUB_TOKEN` environment variable)
+- `github` (repositories): `stars`, `forks`, `issues` and `pullRequests` (all-time totals), `openIssues` and `openPullRequests` (these four require a `GITHUB_TOKEN` environment variable)
 
 Comments deleted upstream are removed when a post is reimported (`--overwrite`). If a comment request fails, existing comments are kept and fetched ones are updated.
 

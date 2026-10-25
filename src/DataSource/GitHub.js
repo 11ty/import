@@ -161,7 +161,7 @@ export class GitHub extends DataSource {
 		}
 	}
 
-	// All-time issue and pull request totals for a page of repositories in one GraphQL request (requires `GITHUB_TOKEN`)
+	// All-time and open issue and pull request totals for a page of repositories in one GraphQL request (requires `GITHUB_TOKEN`)
 	async #fetchIssueCounts(repos) {
 		if(!process.env.GITHUB_TOKEN || !repos.length) {
 			return {};
@@ -169,7 +169,7 @@ export class GitHub extends DataSource {
 
 		let fields = repos.map((repo, index) => {
 			let [owner, name] = repo.full_name.split("/");
-			return `r${index}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { issues { totalCount } pullRequests { totalCount } }`;
+			return `r${index}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { issues { totalCount } pullRequests { totalCount } openIssues: issues(states: OPEN) { totalCount } openPullRequests: pullRequests(states: OPEN) { totalCount } }`;
 		});
 
 		let url = `${GitHub.API}/graphql`;
@@ -238,6 +238,8 @@ export class GitHub extends DataSource {
 			forks: repo.forks_count,
 			issues: issueCounts?.issues?.totalCount,
 			pullRequests: issueCounts?.pullRequests?.totalCount,
+			openIssues: issueCounts?.openIssues?.totalCount,
+			openPullRequests: issueCounts?.openPullRequests?.totalCount,
 		});
 		if(counts) {
 			entry.counts = counts;

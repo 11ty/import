@@ -3576,65 +3576,74 @@ test("npm", async (t) => {
 	let importer = getImporter();
 	importer.addSource("npm", "https://www.npmjs.com/~ZachLeat");
 
-	importer.addDataOverride("npm", "https://registry.npmjs.org/-/user/zachleat/package", { "@11ty/a": "write", b: "write", gone: "write" });
+	importer.addDataOverride("npm", "https://registry.npmjs.org/-/user/zachleat/package", { "@11ty/a": "write", b: "read", c: "write", gone: "write" });
 	importer.addDataOverride("npm", "https://registry.npmjs.org/@11ty%2fa", {
 		name: "@11ty/a",
 		description: "Package A",
-		"dist-tags": { latest: "2.0.0" },
-		time: { created: "2020-01-01T00:00:00.000Z", modified: "2026-01-01T00:00:00.000Z", "2.0.0": "2025-01-01T00:00:00.000Z" },
+		"dist-tags": { latest: "1.0.0", beta: "2.0.0-beta.1" },
+		time: { created: "2020-01-01T00:00:00.000Z", "1.0.0": "2020-01-01T00:00:00.000Z", "2.0.0-beta.1": "2021-01-01T00:00:00.000Z", "0.0.1": "2019-01-01T00:00:00.000Z", "0.0.0-stage": "2022-06-01T00:00:00.000Z", "3.0.0": "2023-01-01T00:00:00.000Z", "3.0.1": "2023-02-01T00:00:00.000Z" },
 		repository: { type: "git", url: "git+https://github.com/11ty/utils.git", directory: "packages/a" },
-		license: "MIT",
-		readme: `# A\n\n![Logo](./logo.png) See [docs](docs/README.md), [usage](#usage), and <img src="https://example.com/x.png">.\n\n## Usage`,
 		versions: {
-			"2.0.0": { keywords: ["eleventy"], author: "Zach Leatherman <zach@example.com> (https://zachleat.com/)", deprecated: "Use b" },
+			"0.0.1": { _npmUser: { name: "someone" } },
+			"1.0.0": { _npmUser: { name: "zachleat", email: "zach@example.com" }, license: "MIT", keywords: ["eleventy"], repository: { type: "git", url: "git+https://github.com/11ty/utils.git", directory: "packages/a" }, readme: `See [docs](docs/README.md) and ![Logo](./logo.png)` },
+			"2.0.0-beta.1": { _npmUser: { name: "ZachLeat" }, deprecated: "Use b" },
+			"0.0.0-stage": { _npmUser: { name: "zachleat" } },
+			"3.0.0": { _npmUser: { name: "GitHub Actions", trustedPublisher: { id: "github" }, approver: { name: "zachleat" } } },
+			"3.0.1": { _npmUser: { name: "GitHub Actions", trustedPublisher: { id: "github" } } },
 		},
 	});
 	importer.addDataOverride("npm", "https://registry.npmjs.org/b", {
 		name: "b",
-		description: "Package B & more",
 		"dist-tags": { latest: "1.0.0" },
-		time: { created: "2010-01-01T00:00:00.000Z", "1.0.0": "2010-01-01T00:00:00.000Z" },
-		repository: "gitlab:someone/b",
-		readme: "ERROR: No README data found!",
-		versions: { "1.0.0": {} },
+		time: { "1.0.0": "2022-01-01T00:00:00.000Z" },
+		versions: { "1.0.0": { _npmUser: { name: "zachleat" }, readme: "ERROR: No README data found!" } },
+	});
+	importer.addDataOverride("npm", "https://registry.npmjs.org/c", {
+		name: "c",
+		time: { "1.0.0": "2024-01-01T00:00:00.000Z", "2.0.0": "2024-02-01T00:00:00.000Z" },
+		versions: { "1.0.0": { _npmUser: { name: "someone" } }, "2.0.0": { _npmUser: { name: "GitHub Actions", trustedPublisher: { id: "github" } } } },
 	});
 	importer.addDataOverride("npm", "https://registry.npmjs.org/gone", {
 		name: "gone",
 		time: { created: "2010-01-01T00:00:00.000Z", unpublished: { time: "2011-01-01T00:00:00.000Z" } },
 	});
 
+	// Newest first across packages, only versions this user published or approved, unapproved trusted publishes only for packages they published or approved elsewhere
 	let entries = await importer.getEntries({ contentType: "markdown" });
-	assert.deepEqual(entries.map(entry => entry.filePath), ["@11ty/a.md", "b.md"]);
+	assert.deepEqual(entries.map(entry => entry.filePath), ["@11ty/a/3.0.1.md", "@11ty/a/3.0.0.md", "b/1.0.0.md", "@11ty/a/2.0.0-beta.1.md", "@11ty/a/1.0.0.md"]);
 
-	let [a, b] = entries;
-	assert.equal(a.uuid, "11ty/import::npm::@11ty/a");
-	assert.equal(a.url, "https://www.npmjs.com/package/@11ty/a");
-	assert.equal(a.title, "@11ty/a");
-	assert.deepEqual(a.date, new Date("2020-01-01T00:00:00.000Z"));
-	assert.deepEqual(a.dateUpdated, new Date("2025-01-01T00:00:00.000Z"));
-	assert.deepEqual(a.authors, [{ name: "Zach Leatherman", url: "https://zachleat.com/" }]);
-	assert.deepEqual(a.tags, ["eleventy"]);
-	assert.deepEqual(a.metadata, {
-		name: "@11ty/a",
-		version: "2.0.0",
-		license: "MIT",
-		repository: "https://github.com/11ty/utils",
-		deprecated: "Use b",
-		tags: ["eleventy"],
-	});
+	let [unapproved, approved, b, beta, stable] = entries;
+	assert.deepEqual(approved.authors, [{ name: "zachleat", url: "https://www.npmjs.com/~zachleat" }]);
+	assert.deepEqual(unapproved.authors, [{ name: "zachleat", url: "https://www.npmjs.com/~zachleat" }]);
+	assert.equal(b.content, "");
+
+	assert.equal(beta.uuid, "11ty/import::npm::@11ty/a::2.0.0-beta.1");
+	assert.equal(beta.title, "@11ty/a@2.0.0-beta.1");
+	assert.equal(beta.url, "https://www.npmjs.com/package/@11ty/a/v/2.0.0-beta.1");
+	assert.equal(beta.description, "Package A");
+	assert.deepEqual(beta.date, new Date("2021-01-01T00:00:00.000Z"));
+	assert.deepEqual(beta.metadata, { name: "@11ty/a", version: "2.0.0-beta.1", prerelease: true, distTags: ["beta"], repository: "https://github.com/11ty/utils", deprecated: "Use b" });
+
+	assert.deepEqual(stable.authors, [{ name: "zachleat", url: "https://www.npmjs.com/~zachleat" }]);
+	assert.deepEqual(stable.tags, ["eleventy"]);
+	assert.deepEqual(stable.metadata, { name: "@11ty/a", version: "1.0.0", distTags: ["latest"], license: "MIT", repository: "https://github.com/11ty/utils", tags: ["eleventy"] });
 	// Relative URLs resolve to the repository directory
-	assert.equal(a.content, [
-		"# A",
-		"",
-		"![Logo](https://raw.githubusercontent.com/11ty/utils/HEAD/packages/a/logo.png) See [docs](https://github.com/11ty/utils/blob/HEAD/packages/a/docs/README.md), [usage](#usage), and ![](https://example.com/x.png).",
-		"",
-		"## Usage",
-	].join("\n"));
+	assert.equal(stable.content, "See [docs](https://github.com/11ty/utils/blob/HEAD/packages/a/docs/README.md) and ![Logo](https://raw.githubusercontent.com/11ty/utils/HEAD/packages/a/logo.png)");
+});
 
-	// No author falls back to the profile, no README falls back to the description
-	assert.deepEqual(b.authors, [{ name: "zachleat", url: "https://www.npmjs.com/~zachleat" }]);
-	assert.equal(b.metadata.repository, "gitlab:someone/b");
-	assert.equal(b.content, "Package B & more");
+test("npm organization releases", async (t) => {
+	let importer = getImporter();
+	importer.addSource("npm", "@11ty");
+
+	importer.addDataOverride("npm", "https://registry.npmjs.org/-/org/11ty/package", { "@11ty/a": "write" });
+	importer.addDataOverride("npm", "https://registry.npmjs.org/@11ty%2fa", {
+		name: "@11ty/a",
+		time: { "1.0.0": "2020-01-01T00:00:00.000Z" },
+		versions: { "1.0.0": { author: "Zach Leatherman <zach@example.com> (https://zachleat.com/)" } },
+	});
+
+	let [entry] = await importer.getEntries({ contentType: "markdown" });
+	assert.deepEqual(entry.authors, [{ name: "Zach Leatherman", url: "https://zachleat.com/" }]);
 });
 
 test("npm targets", async (t) => {
@@ -3779,8 +3788,8 @@ test("GitHub repository issue and pull request counts", async (t) => {
 	importer.addDataOverride("github", "https://api.github.com/repos/11ty/empty/readme", "# Empty");
 	importer.addDataOverride("github", "https://api.github.com/graphql", {
 		data: {
-			r0: { issues: { totalCount: 1200 }, pullRequests: { totalCount: 800 } },
-			r1: { issues: { totalCount: 0 }, pullRequests: { totalCount: 0 } },
+			r0: { issues: { totalCount: 1200 }, pullRequests: { totalCount: 800 }, openIssues: { totalCount: 90 }, openPullRequests: { totalCount: 12 } },
+			r1: { issues: { totalCount: 0 }, pullRequests: { totalCount: 0 }, openIssues: { totalCount: 0 }, openPullRequests: { totalCount: 0 } },
 		},
 	});
 
@@ -3795,13 +3804,13 @@ test("GitHub repository issue and pull request counts", async (t) => {
 	};
 
 	let [eleventy, empty] = await importer.getEntries({ contentType: "markdown" });
-	assert.deepEqual(eleventy.counts, { stars: 18000, issues: 1200, pullRequests: 800 });
+	assert.deepEqual(eleventy.counts, { stars: 18000, issues: 1200, pullRequests: 800, openIssues: 90, openPullRequests: 12 });
 	assert.equal(empty.counts, undefined);
 
 	// One request per page, forks are skipped
 	assert.equal(requests.length, 1);
 	assert.equal(requests[0].method, "POST");
-	assert.equal(JSON.parse(requests[0].body).query, `{ r0: repository(owner: "11ty", name: "eleventy") { issues { totalCount } pullRequests { totalCount } } r1: repository(owner: "11ty", name: "empty") { issues { totalCount } pullRequests { totalCount } } }`);
+	assert.equal(JSON.parse(requests[0].body).query, `{ r0: repository(owner: "11ty", name: "eleventy") { issues { totalCount } pullRequests { totalCount } openIssues: issues(states: OPEN) { totalCount } openPullRequests: pullRequests(states: OPEN) { totalCount } } r1: repository(owner: "11ty", name: "empty") { issues { totalCount } pullRequests { totalCount } openIssues: issues(states: OPEN) { totalCount } openPullRequests: pullRequests(states: OPEN) { totalCount } } }`);
 });
 
 test("GitHub repository issue counts are skipped when the request fails", async (t) => {

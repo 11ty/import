@@ -4,7 +4,7 @@ import urls from "@11ty/posthtml-urls";
 
 import { DataSource } from "../DataSource.js";
 
-// Packages maintained by an npm user or organization, one entry per package with its README
+// Releases (one entry per published version) a user published, or of an organization’s packages
 export class Npm extends DataSource {
 	static TYPE = "npm";
 	static TYPE_FRIENDLY = "npm";
@@ -13,6 +13,7 @@ export class Npm extends DataSource {
 	static WEBSITE = "https://www.npmjs.com";
 	static MISSING_README = "ERROR: No README data found!";
 	static ASSET_TAGS = ["img", "video", "audio", "source"];
+	static IGNORED_VERSION_PREFIXES = ["0.0.0-stage"];
 
 	#markdown = new MarkdownIt({ html: true, linkify: true });
 
@@ -43,10 +44,6 @@ export class Npm extends DataSource {
 		return "json";
 	}
 
-	getProfileUrl() {
-		return this.isOrg ? `${Npm.WEBSITE}/org/${this.name}` : `${Npm.WEBSITE}/~${this.name}`;
-	}
-
 	// Maps package names to access levels
 	getUrl() {
 		return `${Npm.REGISTRY}/-/${this.isOrg ? "org" : "user"}/${encodeURIComponent(this.name)}/package`;
@@ -56,30 +53,55 @@ export class Npm extends DataSource {
 		return `${Npm.REGISTRY}/${name.replace("/", "%2f")}`;
 	}
 
+	// Newest first without `0.0.0-stage` versions, unpublished packages have no versions
 	async getEntries() {
 		let names = Object.keys(await this.getData(this.getUrl(), this.getType()) || {}).sort();
 		let packuments = await Promise.all(names.map(name => this.getData(Npm.getPackumentUrl(name), this.getType())));
-		// Unpublished packages have no versions
-		packuments = packuments.filter(packument => packument?.["dist-tags"]?.latest && !packument.time?.unpublished);
 
-		return this.finalizeEntries(await this.getCleanedEntries(packuments));
+		let releases = packuments
+			.filter(packument => packument?.versions && !packument.time?.unpublished)
+			.flatMap(packument => Object.keys(packument.versions).filter(version => packument.time?.[version] && !Npm.IGNORED_VERSION_PREFIXES.some(prefix => version.startsWith(prefix)) && this.isPublishedByUser(packument, version)).map(version => ({ packument, version })))
+			.sort((a, b) => Date.parse(b.packument.time[b.version]) - Date.parse(a.packument.time[a.version]));
+
+		return this.finalizeEntries(await this.getCleanedEntries(releases));
 	}
 
-	getUniqueIdFromEntry(packument) {
-		return `${DataSource.UUID_PREFIX}::${Npm.TYPE}::${packument.name}`;
+	// Approver of a staged trusted publish, or the user who published
+	static getPublisherName(release) {
+		let user = release?._npmUser;
+		return user?.trustedPublisher ? user.approver?.name : user?.name;
 	}
 
-	// First publish and latest version publish
-	getRawEntryDates(packument) {
-		return {
-			created: this.toDateObj(packument.time?.created),
-			updated: this.toDateObj(packument.time?.[packument["dist-tags"]?.latest] || packument.time?.modified),
-		};
+	static isTrustedPublish(release) {
+		return Boolean(release?._npmUser?.trustedPublisher);
 	}
 
-	// `@scope/name` or `name`
+	// Unapproved trusted publishes count when the user published or approved another version of the package
+	isPublishedByUser(packument, version) {
+		if(this.isOrg) {
+			return true;
+		}
+
+		let isUser = release => Npm.getPublisherName(release)?.toLowerCase() === this.name;
+		let release = packument.versions[version];
+		if(Npm.getPublisherName(release)) {
+			return isUser(release);
+		}
+		return Npm.isTrustedPublish(release) && Object.values(packument.versions).some(isUser);
+	}
+
+	getUniqueIdFromEntry({ packument, version }) {
+		return `${DataSource.UUID_PREFIX}::${Npm.TYPE}::${packument.name}::${version}`;
+	}
+
+	getRawEntryDates({ packument, version }) {
+		let date = this.toDateObj(packument.time?.[version]);
+		return { created: date, updated: date };
+	}
+
+	// `@scope/name/{version}` or `name/{version}`
 	static getFilePath(url) {
-		return decodeURIComponent(new URL(url).pathname.replace(/^\/package\//, ""));
+		return decodeURIComponent(new URL(url).pathname.replace(/^\/package\//, "").replace("/v/", "/"));
 	}
 
 	// GitHub repository URL from a `repository` field (`git+https://…`, `git@github.com:…`, `github:owner/repo`, or `owner/repo`)
@@ -135,56 +157,54 @@ export class Npm extends DataSource {
 		return cleaned;
 	}
 
-	async getContent(packument, latest, repositoryUrl) {
-		let readme = [packument.readme, latest.readme].find(readme => readme && readme !== Npm.MISSING_README);
-		if(!readme) {
-			return DataSource.textToParagraphs(packument.description);
-		}
-
-		return Npm.resolveRelativeUrls(this.#markdown.render(readme), repositoryUrl, packument.repository?.directory || latest.repository?.directory);
-	}
-
-	async cleanEntry(packument) {
-		let version = packument["dist-tags"].latest;
-		let latest = packument.versions?.[version] || {};
-		let { created, updated } = this.getRawEntryDates(packument);
-		let repositoryUrl = Npm.getRepositoryUrl(packument.repository || latest.repository);
+	// Publisher (or approver) of the version, falls back to its author
+	async cleanEntry({ packument, version }) {
+		let release = packument.versions[version] || {};
+		let { created } = this.getRawEntryDates({ packument, version });
+		let publisher = Npm.getPublisherName(release) || (!this.isOrg && Npm.isTrustedPublish(release) ? this.name : undefined);
+		let repositoryUrl = Npm.getRepositoryUrl(release.repository || packument.repository);
 
 		let metadata = {
 			name: packument.name,
 			version,
 		};
-		if(packument.license || latest.license) {
-			metadata.license = packument.license || latest.license;
+		if(version.includes("-")) {
+			metadata.prerelease = true;
 		}
-		if(packument.homepage || latest.homepage) {
-			metadata.homepage = packument.homepage || latest.homepage;
+		let distTags = Object.keys(packument["dist-tags"] || {}).filter(tag => packument["dist-tags"][tag] === version);
+		if(distTags.length) {
+			metadata.distTags = distTags;
+		}
+		if(release.license) {
+			metadata.license = release.license;
 		}
 		if(repositoryUrl) {
 			metadata.repository = repositoryUrl;
 		}
-		if(latest.deprecated) {
-			metadata.deprecated = latest.deprecated;
+		if(release.deprecated) {
+			metadata.deprecated = release.deprecated;
 		}
 
+		let readme = release.readme && release.readme !== Npm.MISSING_README ? release.readme : "";
+
 		let cleanEntry = {
-			uuid: this.getUniqueIdFromEntry(packument),
+			uuid: this.getUniqueIdFromEntry({ packument, version }),
 			type: Npm.TYPE,
-			title: packument.name,
-			url: `${Npm.WEBSITE}/package/${packument.name}`,
-			authors: [Npm.getAuthor(packument.author || latest.author) || { name: this.name, url: this.getProfileUrl() }],
+			title: `${packument.name}@${version}`,
+			url: `${Npm.WEBSITE}/package/${packument.name}/v/${version}`,
+			authors: [publisher ? { name: publisher, url: `${Npm.WEBSITE}/~${publisher}` } : Npm.getAuthor(release.author || packument.author)].filter(Boolean),
 			date: created,
-			dateUpdated: updated,
-			content: await this.getContent(packument, latest, repositoryUrl),
+			content: readme ? await Npm.resolveRelativeUrls(this.#markdown.render(readme), repositoryUrl, release.repository?.directory) : "",
 			contentType: "html",
 			metadata,
 		};
 
-		if(packument.description) {
-			cleanEntry.description = packument.description;
+		let description = release.description || packument.description;
+		if(description) {
+			cleanEntry.description = description;
 		}
 
-		let tags = Array.isArray(latest.keywords) ? latest.keywords.filter(Boolean) : [];
+		let tags = Array.isArray(release.keywords) ? release.keywords.filter(Boolean) : [];
 		if(tags.length) {
 			metadata.tags = tags;
 			cleanEntry.tags = tags;
