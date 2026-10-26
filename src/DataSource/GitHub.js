@@ -142,6 +142,21 @@ export class GitHub extends DataSource {
 		if(updated && updated.getTime() !== created?.getTime()) {
 			entry.dateUpdated = updated;
 		}
+		let reactions = release.reactions || {};
+		let counts = DataSource.cleanCounts({
+			reactions: reactions.total_count,
+			thumbsUp: reactions["+1"],
+			thumbsDown: reactions["-1"],
+			laugh: reactions.laugh,
+			hooray: reactions.hooray,
+			confused: reactions.confused,
+			heart: reactions.heart,
+			rocket: reactions.rocket,
+			eyes: reactions.eyes,
+		});
+		if(counts) {
+			entry.counts = counts;
+		}
 		if(release.draft) {
 			entry.status = "draft";
 		}

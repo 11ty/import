@@ -3662,7 +3662,7 @@ test("GitHub releases", async (t) => {
 	let author = { login: "zachleat", html_url: "https://github.com/zachleat", avatar_url: "https://avatars.githubusercontent.com/u/39355" };
 	importer.addDataOverride("github", "https://api.github.com/repos/11ty/eleventy/releases?per_page=100&page=1", [
 		{ id: 2, tag_name: "v3.0.0-beta.1", name: "", prerelease: true, html_url: "https://github.com/11ty/eleventy/releases/tag/v3.0.0-beta.1", author, created_at: "2024-02-01T00:00:00Z", published_at: "2024-02-01T00:00:00Z", body_html: "<p>Beta <a href=\"https://www.11ty.dev/\">docs</a></p>" },
-		{ id: 1, tag_name: "v2.0.0", name: "Eleventy v2.0.0", prerelease: false, html_url: "https://github.com/11ty/eleventy/releases/tag/v2.0.0", author, created_at: "2023-02-01T00:00:00Z", published_at: "2023-02-08T00:00:00Z", body_html: "<h2>Features</h2><ul><li>Fast</li></ul>" },
+		{ id: 1, tag_name: "v2.0.0", name: "Eleventy v2.0.0", prerelease: false, html_url: "https://github.com/11ty/eleventy/releases/tag/v2.0.0", author, created_at: "2023-02-01T00:00:00Z", published_at: "2023-02-08T00:00:00Z", body_html: "<h2>Features</h2><ul><li>Fast</li></ul>", reactions: { total_count: 5, "+1": 3, "-1": 0, heart: 2 } },
 	]);
 	importer.addDataOverride("github", "https://api.github.com/repos/11ty/eleventy/releases?per_page=100&page=2", []);
 
@@ -3672,6 +3672,7 @@ test("GitHub releases", async (t) => {
 	let [beta, stable] = entries;
 	assert.equal(beta.title, "v3.0.0-beta.1");
 	assert.deepEqual(beta.metadata, { id: 2, tag: "v3.0.0-beta.1", prerelease: true });
+	assert.equal(beta.counts, undefined);
 	assert.equal(beta.content, "Beta [docs](https://www.11ty.dev/)");
 
 	assert.equal(stable.uuid, "11ty/import::github::11ty/eleventy::1");
@@ -3679,6 +3680,7 @@ test("GitHub releases", async (t) => {
 	assert.deepEqual(stable.date, new Date("2023-02-08T00:00:00Z"));
 	assert.deepEqual(stable.authors, [{ name: "zachleat", url: "https://github.com/zachleat", avatarUrl: "https://avatars.githubusercontent.com/u/39355" }]);
 	assert.equal(stable.content, "## Features\n\n-   Fast");
+	assert.deepEqual(stable.counts, { reactions: 5, thumbsUp: 3, heart: 2 });
 
 	let [source] = importer.getSources();
 	assert.equal(source.getHeaders("https://api.github.com/x").Accept, "application/vnd.github.html+json");
