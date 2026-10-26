@@ -26,6 +26,8 @@ const xmlParser = new XMLParser({
 class Fetcher {
 	#cacheDuration = "0s";
 	#timeout = "30s";
+	// Includes reading the body, large media (e.g. Bluesky videos) needs longer
+	#assetTimeout = "5m";
 	#retries = 2;
 	#retryDelay = 1000;
 	#originQueues = new Map();
@@ -97,6 +99,15 @@ class Fetcher {
 	}
 
 	// Timeouts, network errors, rate limits, and server errors
+	// Eleventy Fetch omits the cause when a response exists (e.g. a timeout while reading the body)
+	static getErrorMessage(error) {
+		let cause = error?.cause;
+		if(cause instanceof Error && !error.message.includes(cause.message)) {
+			return `${error.message.replace(/:\s*$/, "")}: ${cause.message}`;
+		}
+		return error.message;
+	}
+
 	static isRetryable(error) {
 		let cause = error?.cause;
 		if(cause instanceof Response) {
@@ -207,6 +218,11 @@ class Fetcher {
 	// Milliseconds or a duration string (e.g. `30s`), `0` disables it
 	setFetchTimeout(timeout) {
 		this.#timeout = timeout;
+	}
+
+	// Asset downloads, milliseconds or a duration string, `0` disables it
+	setAssetFetchTimeout(timeout) {
+		this.#assetTimeout = timeout;
 	}
 
 	// Retries after the first attempt, `0` disables them
@@ -339,6 +355,7 @@ class Fetcher {
 		let request = localAsset ? Promise.resolve(localAsset) : this.fetch(assetUrl, {
 			type: "buffer",
 			returnType: "response",
+			timeout: this.#assetTimeout,
 		},
 		{
 			verbose: true,
@@ -456,7 +473,7 @@ class Fetcher {
 						this.#logWait(origin, delay, "Rate limited (429)");
 					}
 				} else if(this.isVerbose && verbose) {
-					Logger.log(kleur.gray(`Retrying in ${Math.ceil(delay / 1000)}s`), logUrl, kleur.gray(error.message.split(url).join(logUrl)));
+					Logger.log(kleur.gray(`Retrying in ${Math.ceil(delay / 1000)}s`), logUrl, kleur.gray(Fetcher.getErrorMessage(error).split(url).join(logUrl)));
 				}
 				await new Promise(resolve => setTimeout(resolve, delay));
 			}
@@ -468,7 +485,7 @@ class Fetcher {
 			this.errors.add(url);
 
 			if(this.isVerbose && showErrors) {
-				Logger.log(kleur.red(`Error fetching`), logUrl, kleur.red(error.message.split(url).join(logUrl)));
+				Logger.log(kleur.red(`Error fetching`), logUrl, kleur.red(Fetcher.getErrorMessage(error).split(url).join(logUrl)));
 			}
 		}
 	}
