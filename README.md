@@ -183,6 +183,7 @@ npx @11ty/import bluesky @11ty.dev
 - `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
 - `typepad` (Typepad blog URL or domain, optionally with a path, from the Wayback Machine)
 - `hobix` (Hobix blog URL or domain, from the Wayback Machine)
+- `tumblr` (blog name, domain, or URL, public posts and reblogs, requires a `TUMBLR_API_KEY` environment variable, the OAuth consumer key from [registering an app](https://www.tumblr.com/oauth/apps), `--posttypes` filters by `text`, `photo`, `quote`, `link`, `chat`, `audio`, `video`, or `answer`)
 - `twitter` (Twitter/X archive `.zip` file or extracted folder path)
 - `wayback` (site URL or domain, optionally with a path, from the Internet Archive’s Wayback Machine, links to other imported pages point to their files)
 - `webmentions` (domain or site URL, data files only, see [Webmentions](#webmentions))
@@ -277,6 +278,7 @@ Some sources also add a `counts` object (e.g. `{ "likes": 12, "reposts": 3, "com
 - `devto`: `likes` (reactions), `comments`
 - `substack`: `likes` (reactions), `reposts` (restacks), `comments`
 - `instagram`: `likes` (unless hidden), `comments`
+- `tumblr`: `notes` (likes, reblogs, and replies combined)
 - `twitter`: `likes`, `reposts` (as of the archive download)
 - `github` (repositories): `stars`, `forks`, `issues` and `pullRequests` (all-time totals), `openIssues` and `openPullRequests` (these four require a `GITHUB_TOKEN` environment variable)
 - `github` (releases): `reactions` (all emoji reactions), `thumbsUp`, `thumbsDown`, `laugh`, `hooray`, `confused`, `heart`, `rocket`, `eyes`

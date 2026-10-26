@@ -4167,3 +4167,68 @@ test("Flickr API errors throw", async (t) => {
 	importer.addDataOverride("flickr", FLICKR_PHOTOS_URL.replace("PAGE", 1), { stat: "fail", code: 100, message: "Invalid API Key (Key has invalid format)" });
 	await assert.rejects(importer.getEntries(), /Flickr API error 100/);
 });
+
+test("Tumblr", async (t) => {
+	withEnv(t, { TUMBLR_API_KEY: "secret" });
+	let importer = getImporter();
+	importer.addSource("tumblr", "https://www.tumblr.com/example");
+
+	let blog = { name: "example", title: "Example Blog", url: "https://example.tumblr.com/" };
+	let pageUrl = offset => `https://api.tumblr.com/v2/blog/example.tumblr.com/posts?limit=20&offset=${offset}&reblog_info=true&api_key=secret`;
+	importer.addDataOverride("tumblr", pageUrl(0), {
+		meta: { status: 200 },
+		response: {
+			total_posts: 3,
+			posts: [
+				{ id: 3, id_string: "3", type: "text", blog, slug: "hello", post_url: "https://example.tumblr.com/post/3/hello", timestamp: 1790000000, title: "Hello", body: "<p>Hi</p>", tags: ["css"], note_count: 4 },
+				{ id: 2, id_string: "2", type: "photo", blog, post_url: "https://example.tumblr.com/post/2", timestamp: 1789000000, caption: "<p>Caption</p>", photos: [{ caption: "", original_size: { url: "https://64.media.tumblr.com/a/s2048x3072/photo.jpg" } }], reblogged_from_url: "https://other.tumblr.com/post/1" },
+			],
+		},
+	});
+	importer.addDataOverride("tumblr", pageUrl(2), {
+		meta: { status: 200 },
+		response: {
+			total_posts: 3,
+			posts: [
+				{ id: 1, id_string: "1", type: "answer", blog, post_url: "https://example.tumblr.com/post/1", timestamp: 1788000000, asking_name: "anon", question: "Why <b>?", answer: "<p>Because</p>" },
+			],
+		},
+	});
+
+	let [text, photo, answer] = await importer.getEntries({ contentType: "html" });
+	assert.equal(text.uuid, "11ty/import::tumblr::3");
+	assert.equal(text.title, "Hello");
+	assert.equal(text.content.trim(), "<p>Hi</p>");
+	assert.deepEqual(text.tags, ["css"]);
+	assert.deepEqual(text.counts, { notes: 4 });
+	assert.deepEqual(text.authors, [{ name: "Example Blog", url: "/" }]);
+	assert.deepEqual(text.date, new Date(1790000000 * 1000));
+
+	assert.deepEqual(photo.metadata.media, { featuredImage: "https://64.media.tumblr.com/a/s2048x3072/photo.jpg" });
+	assert.equal(photo.metadata.rebloggedFrom, "https://other.tumblr.com/post/1");
+	assert.match(photo.content, /<img src="https:\/\/64\.media\.tumblr\.com\/a\/s2048x3072\/photo\.jpg"/);
+
+	assert.match(answer.content, /anon asked: Why &lt;b&gt;\?/);
+	assert.match(answer.content, /<p>Because<\/p>/);
+});
+
+test("Tumblr post types and blog names", async (t) => {
+	withEnv(t, { TUMBLR_API_KEY: undefined });
+	assert.throws(() => new Importer().addSource("tumblr", "example"), /TUMBLR_API_KEY/);
+
+	withEnv(t, { TUMBLR_API_KEY: "secret" });
+	assert.throws(() => new Importer().addSource("tumblr", { url: "example", postTypes: "posts" }), /Unsupported Tumblr post types/);
+
+	let { Tumblr } = await import("../src/DataSource/Tumblr.js");
+	assert.equal(Tumblr.normalizeBlog("@example"), "example.tumblr.com");
+	assert.equal(Tumblr.normalizeBlog("blog.example.com"), "blog.example.com");
+	assert.equal(Tumblr.normalizeBlog("https://example.tumblr.com/post/1"), "example.tumblr.com");
+
+	let importer = getImporter();
+	importer.addSource("tumblr", { url: "example", postTypes: "quote" });
+	importer.addDataOverride("tumblr", "https://api.tumblr.com/v2/blog/example.tumblr.com/posts/quote?limit=20&offset=0&reblog_info=true&api_key=secret", {
+		response: { total_posts: 1, posts: [{ id: 5, type: "quote", post_url: "https://example.tumblr.com/post/5", timestamp: 1790000000, text: "Quoted", source: "Someone" }] },
+	});
+	let [quote] = await importer.getEntries({ contentType: "html" });
+	assert.equal(quote.content, "<blockquote>Quoted</blockquote>\n<p>— Someone</p>");
+});

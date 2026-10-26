@@ -41,6 +41,7 @@ import { CodePen } from "./DataSource/CodePen.js";
 import { Webmentions } from "./DataSource/Webmentions.js";
 import { Letterboxd } from "./DataSource/Letterboxd.js";
 import { Flickr } from "./DataSource/Flickr.js";
+import { Tumblr } from "./DataSource/Tumblr.js";
 
 import pkg from "../package.json" with { type: "json" };
 
@@ -323,6 +324,8 @@ class Importer {
 				cls = Letterboxd;
 			} else if(type === "flickr") {
 				cls = Flickr;
+			} else if(type === "tumblr") {
+				cls = Tumblr;
 			}
 		} else if(typeof type === "function") {
 			cls = type;

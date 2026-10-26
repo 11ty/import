@@ -182,6 +182,9 @@ if(help) {
 
   # Import public Flickr photos (requires FLICKR_API_KEY)
   npx @11ty/import flickr zachleat
+
+  # Import public Tumblr posts (requires TUMBLR_API_KEY)
+  npx @11ty/import tumblr staff
 `);
 
 	process.exit();
