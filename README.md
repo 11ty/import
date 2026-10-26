@@ -172,6 +172,7 @@ npx @11ty/import bluesky @11ty.dev
 - `devto` (DEV username or organization)
 - `flickr` (username, NSID, or profile URL, public photos and videos as still images, requires a `FLICKR_API_KEY` environment variable from the [Flickr App Garden](https://www.flickr.com/services/apps/create/))
 - `ghost` (site URL)
+- `hackernews` (origin, URL, or domain, the most popular Hacker News stories linking to it, 100 by default or `--limit` up to 500, from the [Algolia Hacker News API](https://hn.algolia.com/api))
 - `github` (`owner/repo` or repository URL for releases, `owner` or profile URL for a user’s or organization’s repositories, an optional `GITHUB_TOKEN` environment variable raises the rate limit and includes draft releases)
 - `github-gist` (GitHub username, public gists)
 - `instagram` (username of a business or creator account, requires an `INSTAGRAM_ACCESS_TOKEN` environment variable for that account from the [Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login))
@@ -278,6 +279,7 @@ Some sources also add a `counts` object (e.g. `{ "likes": 12, "reposts": 3, "com
 - `devto`: `likes` (reactions), `comments`
 - `substack`: `likes` (reactions), `reposts` (restacks), `comments`
 - `instagram`: `likes` (unless hidden), `comments`
+- `hackernews`: `points`, `comments`
 - `tumblr`: `notes` (likes, reblogs, and replies combined)
 - `twitter`: `likes`, `reposts` (as of the archive download)
 - `github` (repositories): `stars`, `forks`, `issues` and `pullRequests` (all-time totals), `openIssues` and `openPullRequests` (these four require a `GITHUB_TOKEN` environment variable)

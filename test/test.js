@@ -4232,3 +4232,39 @@ test("Tumblr post types and blog names", async (t) => {
 	let [quote] = await importer.getEntries({ contentType: "html" });
 	assert.equal(quote.content, "<blockquote>Quoted</blockquote>\n<p>— Someone</p>");
 });
+
+test("Hacker News", async (t) => {
+	let importer = getImporter();
+	importer.addSource("hackernews", "https://www.example.com");
+
+	importer.addDataOverride("hackernews", "https://hn.algolia.com/api/v1/search?query=example.com&restrictSearchableAttributes=url&tags=story&hitsPerPage=100", {
+		hits: [
+			{ objectID: "3", title: "Hello <World>", url: "https://www.example.com/hello/", author: "pg", created_at_i: 1790000003, points: 10, num_comments: 2 },
+			{ objectID: "4", title: "Other", url: "https://notexample.com/", author: "pg", created_at_i: 1790000004, points: 8 },
+			{ objectID: "2", title: "Subdomain", url: "https://blog.example.com/", author: "pg", created_at_i: 1790000002, points: 5 },
+			{ objectID: "1", title: "Old", url: "http://example.com/old/", author: "dang", created_at_i: 1790000001, points: 1, num_comments: 0 },
+		],
+	});
+
+	let [hello, old] = await importer.getEntries({ contentType: "html" });
+	assert.equal(hello.uuid, "11ty/import::hackernews::3");
+	assert.equal(hello.title, "Hello <World>");
+	assert.equal(hello.url, "https://news.ycombinator.com/item?id=3");
+	assert.equal(hello.content, `<p><a href="https://www.example.com/hello/">Hello &lt;World&gt;</a></p>`);
+	assert.equal(hello.metadata.externalUrl, "https://www.example.com/hello/");
+	assert.deepEqual(hello.authors, [{ name: "pg", url: "https://news.ycombinator.com/user?id=pg" }]);
+	assert.deepEqual(hello.counts, { points: 10, comments: 2 });
+	assert.deepEqual(hello.date, new Date(1790000003 * 1000));
+	assert.deepEqual(old.counts, { points: 1 });
+	assert.equal(hello.filePath, "3.html");
+
+	let { HackerNews } = await import("../src/DataSource/HackerNews.js");
+	assert.equal(HackerNews.getHostname("WWW.Example.com"), "example.com");
+
+	let source = new HackerNews("example.com");
+	source.setLimit(20);
+	assert.match(source.getUrl(), /hitsPerPage=20$/);
+	source.setLimit(2000);
+	assert.match(source.getUrl(), /hitsPerPage=500$/);
+	assert.throws(() => new Importer().addSource("hackernews", ""), /requires an origin/);
+});

@@ -42,6 +42,7 @@ import { Webmentions } from "./DataSource/Webmentions.js";
 import { Letterboxd } from "./DataSource/Letterboxd.js";
 import { Flickr } from "./DataSource/Flickr.js";
 import { Tumblr } from "./DataSource/Tumblr.js";
+import { HackerNews } from "./DataSource/HackerNews.js";
 
 import pkg from "../package.json" with { type: "json" };
 
@@ -326,6 +327,8 @@ class Importer {
 				cls = Flickr;
 			} else if(type === "tumblr") {
 				cls = Tumblr;
+			} else if(type === "hackernews") {
+				cls = HackerNews;
 			}
 		} else if(typeof type === "function") {
 			cls = type;

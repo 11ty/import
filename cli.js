@@ -185,6 +185,9 @@ if(help) {
 
   # Import public Tumblr posts (requires TUMBLR_API_KEY)
   npx @11ty/import tumblr staff
+
+  # Import Hacker News stories linking to a site
+  npx @11ty/import hackernews https://www.11ty.dev
 `);
 
 	process.exit();
