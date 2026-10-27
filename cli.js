@@ -188,6 +188,12 @@ if(help) {
 
   # Import Hacker News stories linking to a site
   npx @11ty/import hackernews https://www.11ty.dev
+
+  # Import Open Collective contributions an account made to others
+  npx @11ty/import opencollective 11ty
+
+  # Import recent Kickstarter project updates
+  npx @11ty/import kickstarter https://www.kickstarter.com/projects/elanlee/exploding-kittens
 `);
 
 	process.exit();

@@ -682,6 +682,25 @@ test("WordPress falls back to the paged RSS feed when no API is found", async (t
 	assert.deepEqual(entries[0].metadata, { id: 123, slug: "hello", postType: "post", categories: ["Economics"] });
 });
 
+test("URL fragments get their own file path", async (t) => {
+	let importer = new Importer();
+	importer.setOutputFolder("out");
+
+	// Without colocation
+	assert.equal(importer.getFilePath({ url: "https://example.com/changelog#v7-3-1" }, "markdown"), "out/changelog/v7-3-1.md");
+	assert.equal(importer.getFilePath({ url: "https://example.com/changelog.html#v7-3-1" }, "html"), "out/changelog/v7-3-1.html");
+	// Bare `#` is no hash
+	assert.equal(importer.getFilePath({ url: "https://example.com/changelog#" }, "markdown"), "out/changelog.md");
+	// No hash is unchanged
+	assert.equal(importer.getFilePath({ url: "https://example.com/changelog" }, "markdown"), "out/changelog.md");
+	assert.equal(importer.getFilePath({ url: "https://example.com/changelog/" }, "markdown"), "out/changelog.md");
+
+	importer.setAssetReferenceType("colocate");
+	assert.equal(importer.getFilePath({ url: "https://example.com/changelog#v7-3-1" }, "markdown"), "out/changelog/v7-3-1/index.md");
+	assert.equal(importer.getFilePath({ url: "https://example.com/changelog#" }, "markdown"), "out/changelog/index.md");
+	assert.equal(importer.getFilePath({ url: "https://example.com/changelog" }, "markdown"), "out/changelog/index.md");
+});
+
 test("Author avatars are downloaded as assets", async (t) => {
 	let importer = new Importer();
 
@@ -1237,6 +1256,40 @@ test("Atom enclosures and Media RSS", async (t) => {
 <img src="https://example.com/photo.png" alt="A photo">
 <audio controls="" src="https://example.com/episode.mp3"></audio>`);
 	assert.equal(text.content, "Hello");
+});
+
+test("Atom escaped and CDATA HTML content", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	importer.addSource("atom", "https://example.com/feed.atom");
+	importer.addDataOverride("atom", "https://example.com/feed.atom", Fetcher.parseXml(`<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+	<title>Example</title>
+	<author><name>Author</name></author>
+	<entry>
+		<id>tag:example.com,2024:escaped</id>
+		<title>Escaped</title>
+		<published>2024-01-02T00:00:00Z</published>
+		<content type="html">&lt;p&gt;Fish &amp;amp; &lt;em&gt;chips&lt;/em&gt; &amp;lt;3&lt;/p&gt;</content>
+	</entry>
+	<entry>
+		<id>tag:example.com,2024:cdata</id>
+		<title>CDATA</title>
+		<published>2024-01-01T00:00:00Z</published>
+		<content type="html"><![CDATA[<p>Fish &amp; <em>chips</em> &lt;3</p>]]></content>
+	</entry>
+</feed>`));
+
+	let [escaped, cdata] = await importer.getEntries({ contentType: "html" });
+	assert.equal(escaped.content, "<p>Fish &amp; <em>chips</em> &lt;3</p>");
+	assert.equal(cdata.content, "<p>Fish &amp; <em>chips</em> &lt;3</p>");
+
+	let [escapedMarkdown, cdataMarkdown] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(escapedMarkdown.content, "Fish & _chips_ <3");
+	assert.equal(cdataMarkdown.content, "Fish & _chips_ <3");
 });
 
 test("Documents that fail to process are counted as errors", async (t) => {
@@ -3313,6 +3366,14 @@ test("Fetch timeout", async (t) => {
 	await assert.rejects(fetcher.fetch(url, {}, { showErrors: false }));
 });
 
+test("Fetch error message includes the cause", async (t) => {
+	let timeout = new Error("Bad response for https://example.com/ (200): ", { cause: new DOMException("The operation was aborted due to timeout", "TimeoutError") });
+	assert.equal(Fetcher.getErrorMessage(timeout), "Bad response for https://example.com/ (200): The operation was aborted due to timeout");
+
+	let status = new Error("Bad response for https://example.com/ (404): Not Found", { cause: new Response(null, { status: 404 }) });
+	assert.equal(Fetcher.getErrorMessage(status), status.message);
+});
+
 test("Fetch retries", async (t) => {
 	let { createServer } = await import("node:http");
 	let requests = {};
@@ -3607,6 +3668,8 @@ test("npm", async (t) => {
 		name: "gone",
 		time: { created: "2010-01-01T00:00:00.000Z", unpublished: { time: "2011-01-01T00:00:00.000Z" } },
 	});
+	importer.addDataOverride("npm", Npm.getDownloadsUrl("@11ty/a"), { downloads: 1234 });
+	importer.addDataOverride("npm", Npm.getDownloadsUrl("b"), { downloads: 0 });
 
 	// Newest first across packages, only versions this user published or approved, unapproved trusted publishes only for packages they published or approved elsewhere
 	let entries = await importer.getEntries({ contentType: "markdown" });
@@ -3616,6 +3679,7 @@ test("npm", async (t) => {
 	assert.deepEqual(approved.authors, [{ name: "zachleat", url: "https://www.npmjs.com/~zachleat" }]);
 	assert.deepEqual(unapproved.authors, [{ name: "zachleat", url: "https://www.npmjs.com/~zachleat" }]);
 	assert.equal(b.content, "");
+	assert.equal(b.counts, undefined);
 
 	assert.equal(beta.uuid, "11ty/import::npm::@11ty/a::2.0.0-beta.1");
 	assert.equal(beta.title, "@11ty/a@2.0.0-beta.1");
@@ -3626,6 +3690,7 @@ test("npm", async (t) => {
 
 	assert.deepEqual(stable.authors, [{ name: "zachleat", url: "https://www.npmjs.com/~zachleat" }]);
 	assert.deepEqual(stable.tags, ["eleventy"]);
+	assert.deepEqual(stable.counts, { downloads: 1234 });
 	assert.deepEqual(stable.metadata, { name: "@11ty/a", version: "1.0.0", distTags: ["latest"], license: "MIT", repository: "https://github.com/11ty/utils", tags: ["eleventy"] });
 	// Relative URLs resolve to the repository directory
 	assert.equal(stable.content, "See [docs](https://github.com/11ty/utils/blob/HEAD/packages/a/docs/README.md) and ![Logo](https://raw.githubusercontent.com/11ty/utils/HEAD/packages/a/logo.png)");
@@ -3652,6 +3717,7 @@ test("npm targets", async (t) => {
 	assert.deepEqual(Npm.parseTarget("~zachleat"), { name: "zachleat", isOrg: false });
 	assert.equal(Npm.getRepositoryUrl("git@github.com:11ty/eleventy.git"), "https://github.com/11ty/eleventy");
 	assert.equal(Npm.getRepositoryUrl("11ty/eleventy"), "https://github.com/11ty/eleventy");
+	assert.equal(Npm.getDownloadsUrl("@11ty/eleventy", new Date("2026-10-27T12:00:00Z")), "https://api.npmjs.org/downloads/point/2025-10-26:2026-10-26/@11ty/eleventy");
 });
 
 test("GitHub releases", async (t) => {
@@ -4267,4 +4333,151 @@ test("Hacker News", async (t) => {
 	source.setLimit(2000);
 	assert.match(source.getUrl(), /hitsPerPage=500$/);
 	assert.throws(() => new Importer().addSource("hackernews", ""), /requires an origin/);
+});
+
+test("Kickstarter project updates", async (t) => {
+	let importer = getImporter();
+	importer.addSource("kickstarter", "https://www.kickstarter.com/projects/elanlee/exploding-kittens/description?ref=discover");
+
+	importer.addDataOverride("kickstarter", "https://www.kickstarter.com/projects/elanlee/exploding-kittens/posts.atom", Fetcher.parseXml(`<?xml version="1.0" encoding="UTF-8"?>
+<feed xml:lang="en-US" xmlns="http://www.w3.org/2005/Atom">
+  <id>tag:www.kickstarter.com,2008-10-09:/projects/elanlee/exploding-kittens/posts</id>
+  <title>Kickstarter: Exploding Kittens</title>
+  <updated>2024-06-12T13:32:29-04:00</updated>
+  <entry>
+    <id>tag:www.kickstarter.com,2008-10-09:FreeformPost/4124702</id>
+    <published>2024-06-12T13:42:47-04:00</published>
+    <updated>2026-08-10T14:01:46-04:00</updated>
+    <link rel="alternate" type="text/html" href="https://www.kickstarter.com/projects/elanlee/exploding-kittens/posts/4124702"/>
+    <title>On Netflix July 12th!</title>
+    <content type="html">&lt;p&gt;Hi &amp;amp; hello&lt;/p&gt;</content>
+  </entry>
+</feed>`));
+
+	let [post] = await importer.getEntries({ contentType: "html" });
+	assert.equal(post.type, "kickstarter");
+	assert.equal(post.uuid, "11ty/import::kickstarter::4124702");
+	assert.equal(post.title, "On Netflix July 12th!");
+	assert.equal(post.url, "https://www.kickstarter.com/projects/elanlee/exploding-kittens/posts/4124702");
+	assert.equal(post.content, "<p>Hi &amp; hello</p>");
+	assert.deepEqual(post.authors, [{ name: "elanlee", url: "https://www.kickstarter.com/profile/elanlee" }]);
+	assert.deepEqual(post.date, new Date("2024-06-12T13:42:47-04:00"));
+	assert.deepEqual(post.metadata, { id: "4124702", project: { title: "Exploding Kittens", url: "https://www.kickstarter.com/projects/elanlee/exploding-kittens" } });
+	assert.equal(post.filePath, "4124702.html");
+
+	let [markdownPost] = await importer.getEntries({ contentType: "markdown" });
+	assert.equal(markdownPost.content, "Hi & hello");
+
+	let { Kickstarter } = await import("../src/DataSource/Kickstarter.js");
+	assert.deepEqual(Kickstarter.getProject("elanlee/exploding-kittens"), { creator: "elanlee", project: "exploding-kittens" });
+	assert.throws(() => new Importer().addSource("kickstarter", "https://www.kickstarter.com/discover"), /requires a project URL/);
+});
+
+test("Open Collective contributions", async (t) => {
+	let importer = getImporter();
+	importer.addSource("opencollective", "https://opencollective.com/Example/transactions");
+
+	let { OpenCollective } = await import("../src/DataSource/OpenCollective.js");
+	let getUrl = new OpenCollective("example").getUrl();
+	let account = nodes => ({ data: { account: { slug: "example", orders: { nodes } } } });
+	let fromAccount = { name: "Example", slug: "example", type: "COLLECTIVE", imageUrl: "https://images.opencollective.com/example/logo.png" };
+
+	importer.addDataOverride("opencollective", getUrl(1), account([
+		{ id: "or_2", legacyId: 2, description: "Monthly financial contribution to Vite <Backer>", status: "CANCELLED", frequency: "MONTHLY", createdAt: "2026-02-01T00:00:00.000Z", amount: { value: 5, currency: "USD" }, totalDonations: { value: 15, currency: "USD" }, tier: { name: "Backer" }, fromAccount, toAccount: { name: "Vite", slug: "vite", type: "COLLECTIVE" } },
+		{ id: "or_1", legacyId: 1, description: "Never paid", status: "CANCELLED", frequency: "ONETIME", createdAt: "2026-01-01T00:00:00.000Z", amount: { value: 5, currency: "USD" }, totalDonations: { value: 0, currency: "USD" }, fromAccount, toAccount: { name: "Vite", slug: "vite", type: "COLLECTIVE" } },
+	]));
+	importer.addDataOverride("opencollective", getUrl(2), account([]));
+
+	let [vite, ...rest] = await importer.getEntries({ contentType: "html" });
+	assert.equal(rest.length, 0);
+	assert.equal(vite.uuid, "11ty/import::opencollective::or_2");
+	assert.equal(vite.title, "Example → Vite");
+	assert.equal(vite.url, "https://opencollective.com/vite");
+	assert.equal(vite.content, "<p>Monthly financial contribution to Vite &lt;Backer&gt;</p>");
+	assert.deepEqual(vite.authors, [{ name: "Example", url: "https://opencollective.com/example", avatarUrl: "https://images.opencollective.com/example/logo.png" }]);
+	assert.deepEqual(vite.date, new Date("2026-02-01T00:00:00.000Z"));
+	assert.deepEqual(vite.metadata, {
+		id: "or_2",
+		legacyId: 2,
+		status: "CANCELLED",
+		frequency: "MONTHLY",
+		amount: { value: 5, currency: "USD" },
+		total: { value: 15, currency: "USD" },
+		tier: "Backer",
+		from: { name: "Example", url: "https://opencollective.com/example", type: "COLLECTIVE" },
+		to: { name: "Vite", url: "https://opencollective.com/vite", type: "COLLECTIVE" },
+	});
+	assert.equal(vite.filePath, "vite/2.html");
+
+	assert.equal(OpenCollective.parseSlug("@11ty"), "11ty");
+	assert.throws(() => new Importer().addSource("opencollective", ""), /requires an account slug/);
+
+	let missing = getImporter();
+	missing.addSource("opencollective", "missing");
+	missing.addDataOverride("opencollective", new OpenCollective("missing").getUrl()(1), { data: { account: null } });
+	await assert.rejects(missing.getEntries(), /account not found/);
+});
+
+test("Feed detects Atom, RSS, and JSON Feed", async (t) => {
+	let atom = getCommentsImporter("feed", "https://example.com/feed.xml");
+	atom.addDataOverride("feed", "https://example.com/feed.xml", `<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet href="/feed.xsl" type="text/xsl"?>
+<!-- Comment -->
+<feed xmlns="http://www.w3.org/2005/Atom">
+	<entry>
+		<id>https://example.com/one/</id>
+		<title>One</title>
+		<published>2024-01-01T00:00:00Z</published>
+		<content type="html">One</content>
+	</entry>
+</feed>`);
+	let [atomEntry] = await atom.getEntries();
+	assert.equal(atomEntry.type, "atom");
+	assert.equal(atomEntry.uuid, "11ty/import::atom::https://example.com/one/");
+	assert.equal(atomEntry.title, "One");
+
+	let rss = getCommentsImporter("feed", { url: "https://example.com/feed/", limit: 1 });
+	rss.addDataOverride("feed", "https://example.com/feed/", `<rss version="2.0"><channel>
+		<item><title>One</title><link>https://example.com/one/</link><guid>1</guid><pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate><description>One</description></item>
+		<item><title>Two</title><link>https://example.com/two/</link><guid>2</guid><pubDate>Tue, 02 Jan 2024 00:00:00 GMT</pubDate><description>Two</description></item>
+	</channel></rss>`);
+	let rssEntries = await rss.getEntries();
+	assert.deepEqual(rssEntries.map(entry => [entry.type, entry.title]), [["rss", "Two"]]);
+
+	let json = getCommentsImporter("feed", "https://example.com/feed.json");
+	json.addDataOverride("feed", "https://example.com/feed.json", JSON.stringify({
+		version: "https://jsonfeed.org/version/1.1",
+		items: [{ id: "1", url: "https://example.com/one/", title: "One", content_html: "<p>One</p>", date_published: "2024-01-01T00:00:00Z" }],
+	}));
+	let [jsonEntry] = await json.getEntries();
+	assert.equal(jsonEntry.type, "jsonfeed");
+	assert.equal(jsonEntry.source.constructor.TYPE, "jsonfeed");
+});
+
+test("Feed discovers a linked feed from an HTML page", async (t) => {
+	let importer = getCommentsImporter("feed", "https://example.com/blog/");
+	importer.addDataOverride("feed", "https://example.com/blog/", `<!doctype html>
+<html><head>
+	<link rel="alternate" type="application/json" href="/wp-json/wp/v2/pages/1">
+	<link rel="alternate" type="application/rss+xml; charset=utf-8" href="feed/">
+	<link rel="alternate" type="application/atom+xml" href="/atom.xml">
+</head><body></body></html>`);
+	importer.addDataOverride("feed", "https://example.com/blog/feed/", `<?xml version="1.0"?>
+<rss version="2.0" xmlns:wfw="http://wellformedweb.org/CommentAPI/"><channel>
+	<item><title>One</title><link>https://example.com/one/</link><guid>1</guid><pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate><description>One</description><wfw:commentRss>https://example.com/one/feed/</wfw:commentRss></item>
+</channel></rss>`);
+	importer.addDataOverride("feed", "https://example.com/one/feed/", Fetcher.parseXml(`<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel>
+	<item><title>By: Jane</title><link>https://example.com/one/#comment-1</link><dc:creator>Jane</dc:creator><pubDate>Tue, 02 Jan 2024 00:00:00 GMT</pubDate><guid isPermaLink="false">c1</guid><description>Hi</description></item>
+</channel></rss>`));
+
+	let [entry] = await importer.getEntries();
+	assert.equal(entry.type, "rss");
+	assert.equal(entry.url, "https://example.com/one/");
+	assert.deepEqual(entry.comments.map(comment => comment.author.name), ["Jane"]);
+});
+
+test("Feed without a feed throws", async (t) => {
+	let importer = getCommentsImporter("feed", "https://example.com/");
+	importer.addDataOverride("feed", "https://example.com/", `<!doctype html><html><head><title>Nope</title></head></html>`);
+	await assert.rejects(importer.getEntries(), /No Atom, RSS, or JSON Feed found at https:\/\/example.com\//);
 });

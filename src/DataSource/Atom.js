@@ -7,6 +7,8 @@ export class Atom extends DataSource {
 	static TYPE = "atom";
 	static TYPE_FRIENDLY = "Atom";
 	static SUPPORTS_COMMENTS = true;
+	// Decoded in `getContent` so Markdown output gets HTML too
+	static DECODE_HTML = false;
 
 	// Per-entry comment feeds (RFC 4685 `<link rel="replies">`)
 	#commentFeeds = new Map();
@@ -63,9 +65,17 @@ export class Atom extends DataSource {
 	static getContent(rawEntry) {
 		let content = rawEntry.content;
 		if(typeof content === "object" && content !== null) {
-			return { content: content["#text"], contentType: content["@_type"] };
+			return { content: Atom.decodeEscapedHtml(content["#text"], content["@_type"]), contentType: content["@_type"] };
 		}
 		return { content };
+	}
+
+	// Escaped HTML can’t contain a raw `<` (CDATA content is left as is)
+	static decodeEscapedHtml(content, contentType) {
+		if(contentType !== "html" || typeof content !== "string" || content.includes("<")) {
+			return content;
+		}
+		return entities.decodeHTML(content);
 	}
 
 	cleanEntry(rawEntry, data) {
@@ -135,7 +145,7 @@ export class Atom extends DataSource {
 					url: alternate?.["@_href"],
 					author: typeof author === "string" ? { name: author } : { name: author?.name, url: author?.uri },
 					date: this.toDateObj(rawComment.published || rawComment.updated),
-					content: contentType === "html" || contentType === "xhtml" ? entities.decodeHTML(content || "") : DataSource.textToHtml(entities.decodeHTML(content || "")),
+					content: contentType === "html" ? content || "" : contentType === "xhtml" ? entities.decodeHTML(content || "") : DataSource.textToHtml(entities.decodeHTML(content || "")),
 				});
 			}));
 		}));

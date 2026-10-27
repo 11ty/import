@@ -90,6 +90,7 @@ npx @11ty/import webmentions example.com
 
 - `atom` (URL)
 - `bluesky` (username)
+- `feed` (Atom, RSS, or JSON Feed URL, or a page URL that links to one, detected automatically)
 - `fediverse` (username)
 - `jsonfeed` (URL)
 - `rss` (URL)
@@ -121,6 +122,16 @@ npx @11ty/import wordpress https://en.blog.wordpress.com
 
 # Import published and draft posts and pages from a WordPress export file (Tools → Export)
 npx @11ty/import wordpressxml ./example.WordPress.2024-01-01.xml --posttypes=posts,pages,product
+```
+
+#### Feeds
+
+```sh
+# Import posts from an Atom, RSS, or JSON Feed (detected automatically)
+npx @11ty/import feed https://www.11ty.dev/blog/feed.xml
+
+# Or a page that links to its feed (the first `<link rel="alternate">` feed)
+npx @11ty/import feed https://www.11ty.dev/blog/
 ```
 
 #### JSON Feed
@@ -176,10 +187,12 @@ npx @11ty/import bluesky @11ty.dev
 - `github` (`owner/repo` or repository URL for releases, `owner` or profile URL for a user’s or organization’s repositories, an optional `GITHUB_TOKEN` environment variable raises the rate limit and includes draft releases)
 - `github-gist` (GitHub username, public gists)
 - `instagram` (username of a business or creator account, requires an `INSTAGRAM_ACCESS_TOKEN` environment variable for that account from the [Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login))
+- `kickstarter` (project URL or `creator/project`, the 10 most recent public updates from the project’s Atom feed)
 - `letterboxd` (username, recent diary entries, reviews, and lists from the public RSS feed, with film, rating, and watched date metadata)
 - `linktree` (Linktree username or profile URL)
 - `medium` (extracted Medium export folder path)
 - `npm` (npm username for the releases they published or approved, including trusted publishing to packages they’ve published to, or `@scope` organization for its packages’ releases)
+- `opencollective` (account slug or URL, contributions the account made to others, one entry per contribution with amounts, tier, and recipient metadata)
 - `squarespace` (collection, post, or page URL, e.g. a blog home page)
 - `substack` (publication URL, custom domains too, or a `*.substack.com` subdomain name)
 - `typepad` (Typepad blog URL or domain, optionally with a path, from the Wayback Machine)
@@ -271,12 +284,13 @@ The data file can also have `likes`, `reposts`, `bookmarks`, and `rsvps` arrays,
 
 Sources share the data file: a source only replaces its own items (matching `via`) and other keys are kept. Items are sorted by date.
 
-Some sources also add a `counts` object (e.g. `{ "likes": 12, "reposts": 3, "comments": 4, "via": "bluesky" }`) from data already requested for the post (zeros are omitted). Counts are replaced on every import of an unedited post.
+Some sources also add a `counts` object (e.g. `{ "likes": 12, "reposts": 3, "comments": 4, "via": "bluesky" }`, zeros are omitted). Counts are replaced on every import of an unedited post.
 
 - `bluesky`, `fediverse`: `likes`, `reposts`, `comments`, `quotes`
 - `youtubeuser`: `likes`, `views`
 - `flickr`: `likes` (faves), `comments`, `views`
 - `devto`: `likes` (reactions), `comments`
+- `npm`: `downloads` (of the package in the previous year, on every release)
 - `substack`: `likes` (reactions), `reposts` (restacks), `comments`
 - `instagram`: `likes` (unless hidden), `comments`
 - `hackernews`: `points`, `comments`
@@ -301,7 +315,7 @@ Comments with content warnings or from authors that opted out of wider distribut
 - `typepad`: comments in the latest archived copy of each post
 - `hobix`: comments in the latest archived copy of each post (commenter names only)
 - `twitter`: your own replies in a thread, as comments on its first tweet (with local media)
-- `rss`, `atom`: per-post comment feeds (`wfw:commentRss` or `<link rel="replies">`), when available
+- `rss`, `atom`, `feed`: per-post comment feeds (`wfw:commentRss` or `<link rel="replies">`), when available
 
 Skip comments with `importer.addSource(type, { url, comments: false })`.
 
@@ -331,6 +345,7 @@ let importer = new Importer();
 importer.setOutputFolder("."); // --output
 importer.setCacheDuration("24h"); // --cacheduration
 importer.setFetchTimeout("30s"); // milliseconds or a duration, 0 to disable
+importer.setAssetFetchTimeout("5m"); // same, for asset downloads (including the body)
 importer.setFetchRetries(2); // for timeouts, network errors, 408, 429, and 5xx responses, 0 to disable
 importer.setFetchRetryDelay(1000); // milliseconds before the first retry, doubled after (`Retry-After` and `x-ratelimit-reset` take precedence)
 importer.setOriginLimit("https://mastodon.social", { concurrency: 2 }); // p-queue options for requests to an origin (cache hits skip it)

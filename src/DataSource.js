@@ -9,7 +9,7 @@ class DataSource {
 	static UUID_PREFIX = "11ty/import";
 	// Sources set `entry.comments` in `cleanEntry` or fetch them in `addComments(entries)`
 	static SUPPORTS_COMMENTS = false;
-	// Sources set `entry.counts` in `cleanEntry` (no extra requests)
+	// Sources set `entry.counts` in `cleanEntry`
 	static SUPPORTS_COUNTS = false;
 	// Downloads assets in comment content and avatars (e.g. your own media in a thread)
 	static COMMENT_ASSETS = false;

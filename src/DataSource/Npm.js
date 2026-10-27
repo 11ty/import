@@ -9,7 +9,10 @@ export class Npm extends DataSource {
 	static TYPE = "npm";
 	static TYPE_FRIENDLY = "npm";
 	static DECODE_HTML = false;
+	static SUPPORTS_COUNTS = true;
 	static REGISTRY = "https://registry.npmjs.org";
+	static DOWNLOADS_API = "https://api.npmjs.org/downloads/point";
+	static DOWNLOADS_DAYS = 365;
 	static WEBSITE = "https://www.npmjs.com";
 	static MISSING_README = "ERROR: No README data found!";
 	static ASSET_TAGS = ["img", "video", "audio", "source"];
@@ -53,6 +56,24 @@ export class Npm extends DataSource {
 		return `${Npm.REGISTRY}/${name.replace("/", "%2f")}`;
 	}
 
+	// Explicit range ending yesterday (UTC), npm serves a stale window for the `last-year` period
+	static getDownloadsUrl(name, now = new Date()) {
+		let end = new Date(now);
+		end.setUTCDate(end.getUTCDate() - 1);
+		let start = new Date(end);
+		start.setUTCDate(start.getUTCDate() - Npm.DOWNLOADS_DAYS);
+		let day = date => date.toISOString().slice(0, 10);
+		return `${Npm.DOWNLOADS_API}/${day(start)}:${day(end)}/${name}`;
+	}
+
+	// Package downloads for the previous year, failed requests (logged as errors) have no count
+	async getDownloads(name) {
+		try {
+			let data = await this.getData(Npm.getDownloadsUrl(name), this.getType());
+			return data?.downloads;
+		} catch(e) {}
+	}
+
 	// Newest first without `0.0.0-stage` versions, unpublished packages have no versions
 	async getEntries() {
 		let names = Object.keys(await this.getData(this.getUrl(), this.getType()) || {}).sort();
@@ -62,6 +83,12 @@ export class Npm extends DataSource {
 			.filter(packument => packument?.versions && !packument.time?.unpublished)
 			.flatMap(packument => Object.keys(packument.versions).filter(version => packument.time?.[version] && !Npm.IGNORED_VERSION_PREFIXES.some(prefix => version.startsWith(prefix)) && this.isPublishedByUser(packument, version)).map(version => ({ packument, version })))
 			.sort((a, b) => Date.parse(b.packument.time[b.version]) - Date.parse(a.packument.time[a.version]));
+
+		let packageNames = [...new Set(releases.map(({ packument }) => packument.name))];
+		let downloads = Object.fromEntries(await Promise.all(packageNames.map(async name => [name, await this.getDownloads(name)])));
+		for(let release of releases) {
+			release.downloads = downloads[release.packument.name];
+		}
 
 		return this.finalizeEntries(await this.getCleanedEntries(releases));
 	}
@@ -158,7 +185,7 @@ export class Npm extends DataSource {
 	}
 
 	// Publisher (or approver) of the version, falls back to its author
-	async cleanEntry({ packument, version }) {
+	async cleanEntry({ packument, version, downloads }) {
 		let release = packument.versions[version] || {};
 		let { created } = this.getRawEntryDates({ packument, version });
 		let publisher = Npm.getPublisherName(release) || (!this.isOrg && Npm.isTrustedPublish(release) ? this.name : undefined);
@@ -198,6 +225,11 @@ export class Npm extends DataSource {
 			contentType: "html",
 			metadata,
 		};
+
+		let counts = DataSource.cleanCounts({ downloads });
+		if(counts) {
+			cleanEntry.counts = counts;
+		}
 
 		let description = release.description || packument.description;
 		if(description) {

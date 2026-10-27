@@ -27,6 +27,7 @@ import { Instagram } from "./DataSource/Instagram.js";
 import { Substack } from "./DataSource/Substack.js";
 import { Ghost } from "./DataSource/Ghost.js";
 import { JsonFeed } from "./DataSource/JsonFeed.js";
+import { Feed } from "./DataSource/Feed.js";
 import { Blogger } from "./DataSource/Blogger.js";
 import { DevTo } from "./DataSource/DevTo.js";
 import { MediumExport } from "./DataSource/MediumExport.js";
@@ -43,6 +44,8 @@ import { Letterboxd } from "./DataSource/Letterboxd.js";
 import { Flickr } from "./DataSource/Flickr.js";
 import { Tumblr } from "./DataSource/Tumblr.js";
 import { HackerNews } from "./DataSource/HackerNews.js";
+import { OpenCollective } from "./DataSource/OpenCollective.js";
+import { Kickstarter } from "./DataSource/Kickstarter.js";
 
 import pkg from "../package.json" with { type: "json" };
 
@@ -242,6 +245,12 @@ class Importer {
 		}
 	}
 
+	setAssetFetchTimeout(timeout) {
+		if(timeout !== undefined && timeout !== "") {
+			this.fetcher.setAssetFetchTimeout(timeout);
+		}
+	}
+
 	setFetchRetries(retries) {
 		if(retries !== undefined) {
 			this.fetcher.setFetchRetries(retries);
@@ -297,6 +306,8 @@ class Importer {
 				cls = Ghost;
 			} else if(type === "jsonfeed") {
 				cls = JsonFeed;
+			} else if(type === "feed") {
+				cls = Feed;
 			} else if(type === "blogger") {
 				cls = Blogger;
 			} else if(type === "devto") {
@@ -329,6 +340,10 @@ class Importer {
 				cls = Tumblr;
 			} else if(type === "hackernews") {
 				cls = HackerNews;
+			} else if(type === "opencollective") {
+				cls = OpenCollective;
+			} else if(type === "kickstarter") {
+				cls = Kickstarter;
 			}
 		} else if(typeof type === "function") {
 			cls = type;
@@ -736,6 +751,15 @@ class Importer {
 		});
 	}
 
+	// Safe single path segment from a URL hash, empty for no (or a bare `#`) hash
+	static getFragmentSlug(hash = "") {
+		let raw = hash.slice(1);
+		try {
+			raw = decodeURIComponent(raw);
+		} catch(e) {}
+		return raw.replace(/[^\w.-]+/g, "-").replace(/^[-.]+|-+$/g, "");
+	}
+
 	getFilePath(entry, contentType) {
 		let { url } = entry;
 
@@ -743,11 +767,14 @@ class Importer {
 
 		// prefer addSource specific override, then fallback to DataSource type default
 		let fallbackPath;
+		let fragment;
 		let hasFilePathFallback = typeof source?.constructor?.getFilePath === "function";
 		if(hasFilePathFallback) {
-			fallbackPath = source?.constructor?.getFilePath(url);
+			fallbackPath = source?.constructor?.getFilePath(url, entry);
 		} else {
-			fallbackPath = (new URL(url)).pathname;
+			let { pathname, hash } = new URL(url);
+			fallbackPath = pathname;
+			fragment = Importer.getFragmentSlug(hash);
 		}
 
 		// Data source specific override
@@ -764,6 +791,11 @@ class Importer {
 
 		// URLs ending in `.html` (e.g. Blogger, some WordPress permalinks) get the output extension instead
 		fallbackPath = fallbackPath.replace(/\.html?$/i, "");
+
+		// Entries on one page told apart by `#fragment` (e.g. a changelog feed) each get their own path
+		if(fragment) {
+			fallbackPath = `${Utils.pathJoin(fallbackPath, fragment)}/`;
+		}
 
 		// WordPress draft posts only have a `p` query param e.g. ?p=ID_NUMBER
 		if(fallbackPath === "/") {
