@@ -249,7 +249,10 @@ export class BlueskyUser extends DataSource {
 		}
 
 		url = BlueskyUser.getPostUrl(record);
-		if(isQuoted || BlueskyUser.isPrivate(record)) {
+		if(BlueskyUser.isPrivate(record)) {
+			return `<p>${BlueskyUser.getLink(url, "Quoted post (visible to signed-in users only)")}</p>`;
+		}
+		if(isQuoted) {
 			return `<p>${BlueskyUser.getLink(url, "Quoted post")}</p>`;
 		}
 

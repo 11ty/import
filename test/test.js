@@ -235,7 +235,7 @@ test("Bluesky rich text, embeds, and paging past reposts", async (t) => {
 </blockquote>`);
 	assert.equal(two.content, `<p>Video</p>
 <video controls="" src="https://pds.example/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Axpchjovbk6sxl3bv74z7cs54&amp;cid=vid" poster="https://video.bsky.app/thumb.jpg"></video>`);
-	assert.equal(three.content, `<p><a href="https://bsky.app/profile/hidden.example/post/h">Quoted post</a></p>`);
+	assert.equal(three.content, `<p><a href="https://bsky.app/profile/hidden.example/post/h">Quoted post (visible to signed-in users only)</a></p>`);
 	assert.equal(four.content, `<p>Gone</p>
 <p><a href="https://bsky.app/profile/did:plc:gone/post/g">Quoted post (unavailable)</a></p>`);
 	assert.equal(five.content, `<p>See <a href="https://example.com">example.com</a></p>`);
