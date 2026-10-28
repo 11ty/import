@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+	<channel>
+		<title>Example Podcast</title>
+		<link>https://example.com/</link>
+		<itunes:author>Example Host</itunes:author>
+		<itunes:image href="https://example.com/show.jpg" />
+		<item>
+			<title>Episode One</title>
+			<itunes:title>Episode One</itunes:title>
+			<description>One</description>
+			<enclosure url="https://cdn.example.com/episodes/1-episode-one.mp3" length="1234" type="audio/mpeg" />
+			<guid isPermaLink="false">Example-1</guid>
+			<pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+			<itunes:author></itunes:author>
+			<itunes:image href="https://example.com/episode-one.jpg" />
+		</item>
+		<item>
+			<title>Episode Two</title>
+			<description>Two</description>
+			<enclosure url="https://cdn.example.com/episodes/2-episode-two.mp3" length="1234" type="audio/mpeg" />
+			<guid isPermaLink="true">https://example.com/episodes/two/</guid>
+			<pubDate>Tue, 02 Jan 2024 00:00:00 GMT</pubDate>
+			<itunes:author>Guest Host</itunes:author>
+		</item>
+		<item>
+			<itunes:title>Episode Three</itunes:title>
+			<description>Three</description>
+			<enclosure url="https://cdn.example.com/episodes/3-episode-three.mp3" length="1234" type="audio/mpeg" />
+			<guid>https://example.com/episodes/three/</guid>
+			<pubDate>Wed, 03 Jan 2024 00:00:00 GMT</pubDate>
+		</item>
+		<item>
+			<description>Four</description>
+			<guid isPermaLink="false">Example-4</guid>
+			<pubDate>Thu, 04 Jan 2024 00:00:00 GMT</pubDate>
+		</item>
+		<item>
+			<description>Five</description>
+			<pubDate>Fri, 05 Jan 2024 00:00:00 GMT</pubDate>
+		</item>
+	</channel>
+</rss>

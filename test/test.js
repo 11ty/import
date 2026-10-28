@@ -1183,6 +1183,44 @@ test("RSS audio enclosures and media:content", async (t) => {
 <audio controls src="https://example.com/episode.mp3"></audio>`);
 });
 
+test("RSS podcast feeds without <link>", async (t) => {
+	let importer = new Importer();
+
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+
+	importer.addSource("rss", "https://example.com/feed.xml");
+	importer.addDataOverride("rss", "https://example.com/feed.xml", Fetcher.parseXml(fs.readFileSync("./test/sources/podcast-feed.xml", "utf8")));
+
+	// The fifth item has no URL, title, or guid and is skipped
+	let [four, three, two, one] = await importer.getEntries();
+
+	// isPermaLink="false" uses the enclosure URL, file path from the title
+	assert.equal(one.url, "https://cdn.example.com/episodes/1-episode-one.mp3");
+	assert.equal(one.filePath, "episode-one.html");
+	assert.equal(one.metadata.media.featuredImage, "https://example.com/episode-one.jpg");
+	assert.deepEqual(one.authors, [{ name: "Example Podcast", url: "https://example.com/" }]);
+	assert.equal(one.content, `One
+<audio controls src="https://cdn.example.com/episodes/1-episode-one.mp3"></audio>`);
+
+	// isPermaLink="true"
+	assert.equal(two.url, "https://example.com/episodes/two/");
+	assert.equal(two.filePath, "episodes/two.html");
+	assert.equal(two.metadata.media.featuredImage, "https://example.com/show.jpg");
+	assert.deepEqual(two.authors, [{ name: "Guest Host" }]);
+
+	// Missing isPermaLink defaults to a permalink
+	assert.equal(three.url, "https://example.com/episodes/three/");
+	assert.equal(three.filePath, "episodes/three.html");
+	assert.equal(three.title, "Episode Three");
+
+	// No URL or title, file path from the guid
+	assert.equal(four.url, undefined);
+	assert.equal(four.filePathSlug, "example-4");
+	assert.equal(four.filePath, "example-4.html");
+	assert.equal(four.uuid, "11ty/import::rss::Example-4");
+});
+
 test("RSS video, image enclosures, media:group, and thumbnails", async (t) => {
 	let importer = new Importer();
 

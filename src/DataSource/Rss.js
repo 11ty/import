@@ -1,4 +1,5 @@
 import * as entities from "entities";
+import slugify from "@sindresorhus/slugify";
 
 import { DataSource } from "../DataSource.js";
 import { MediaRss } from "../MediaRss.js";
@@ -42,6 +43,36 @@ export class Rss extends DataSource {
 		return `${DataSource.UUID_PREFIX}::${Rss.TYPE}::${id}`;
 	}
 
+	static getText(value) {
+		let text = MediaRss.getText(value);
+		return text === undefined || text === null ? "" : String(text).trim();
+	}
+
+	// RSS guids are permalinks unless `isPermaLink="false"`
+	static isGuidPermaLink(guid) {
+		let attr = guid?.["@_isPermaLink"];
+		return attr !== false && attr !== "false";
+	}
+
+	getEntryUrl(rawEntry, enclosures) {
+		let link = Rss.getText(rawEntry.link);
+		if(this.isValidHttpUrl(link)) {
+			return { url: link };
+		}
+
+		let guid = Rss.getText(rawEntry.guid);
+		if(Rss.isGuidPermaLink(rawEntry.guid) && this.isValidHttpUrl(guid)) {
+			return { url: guid };
+		}
+
+		let enclosureUrl = enclosures.map(enclosure => enclosure.url).find(url => this.isValidHttpUrl(url));
+		return { url: enclosureUrl, fromEnclosure: Boolean(enclosureUrl) };
+	}
+
+	static getItunesImageUrl(container) {
+		return MediaRss.toArray(container?.["itunes:image"])[0]?.["@_href"];
+	}
+
 	getRawEntryDates(rawEntry) {
 		return {
 			created: this.toDateObj(this.toIsoDate(rawEntry.pubDate)),
@@ -58,6 +89,8 @@ export class Rss extends DataSource {
 			}
 		} else if(rawEntry['dc:creator']) {
 			authors.push({ name: rawEntry['dc:creator'] });
+		} else if(Rss.getText(rawEntry['itunes:author'])) {
+			authors.push({ name: Rss.getText(rawEntry['itunes:author']) });
 		} else {
 			authors.push({
 				name: data.rss.channel.title,
@@ -75,9 +108,21 @@ export class Rss extends DataSource {
 
 		let { created } = this.getRawEntryDates(rawEntry);
 
-		let featuredImage = MediaRss.getFeaturedImageUrl(rawEntry);
+		let featuredImage = [
+			MediaRss.getFeaturedImageUrl(rawEntry),
+			Rss.getItunesImageUrl(rawEntry),
+			Rss.getItunesImageUrl(data.rss.channel),
+		].find(url => this.isValidHttpUrl(url));
 
 		let uuid = this.getUniqueIdFromEntry(rawEntry);
+
+		// Enclosure pathnames (e.g. `.mp3`) make poor file paths
+		let { url, fromEnclosure } = this.getEntryUrl(rawEntry, enclosures);
+		let filePathSlug;
+		if(!url || fromEnclosure) {
+			filePathSlug = slugify(entities.decodeHTML(Rss.getText(rawEntry.title) || Rss.getText(rawEntry["itunes:title"]) || Rss.getText(rawEntry.guid))) || undefined;
+		}
+
 		let commentFeed = rawEntry["wfw:commentRss"];
 		if(commentFeed && this.isValidHttpUrl(commentFeed)) {
 			this.#commentFeeds.set(uuid, commentFeed);
@@ -87,8 +132,9 @@ export class Rss extends DataSource {
 			...(featuredImage ? { metadata: { media: { featuredImage } } } : {}),
 			uuid,
 			type: Rss.TYPE,
-			title: rawEntry.title || this.toReadableDate(rawEntry.pubDate),
-			url: rawEntry.link,
+			title: rawEntry.title || rawEntry["itunes:title"] || this.toReadableDate(rawEntry.pubDate),
+			url,
+			...(filePathSlug ? { filePathSlug } : {}),
 			authors,
 			date: created,
 			// dateUpdated: rawEntry.updated,

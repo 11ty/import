@@ -683,7 +683,12 @@ class Importer {
 					filePathContentType = "markdown";
 				}
 
-				entry.filePath = this.getFilePath(entry, filePathContentType);
+				try {
+					entry.filePath = this.getFilePath(entry, filePathContentType);
+				} catch(error) {
+					Logger.warning(`Skipping entry ${entry.uuid || entry.title}: ${error.message}`);
+					continue;
+				}
 
 				// to prevent fetching assets and transforming contents on entries that won’t get written
 				if(options.target === "fs" && this.shouldSkipEntry(entry)) {
@@ -769,9 +774,15 @@ class Importer {
 		let fallbackPath;
 		let fragment;
 		let hasFilePathFallback = typeof source?.constructor?.getFilePath === "function";
-		if(hasFilePathFallback) {
+		if(entry.filePathSlug) {
+			// Entries without a usable page URL (e.g. podcast episodes) supply their own
+			fallbackPath = entry.filePathSlug;
+		} else if(hasFilePathFallback) {
 			fallbackPath = source?.constructor?.getFilePath(url, entry);
 		} else {
+			if(!URL.canParse(url)) {
+				throw new Error(`Invalid URL for file path: ${url}`);
+			}
 			let { pathname, hash } = new URL(url);
 			fallbackPath = pathname;
 			fragment = Importer.getFragmentSlug(hash);
