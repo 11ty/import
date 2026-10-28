@@ -336,8 +336,13 @@ class Fetcher {
 		}
 	}
 
-	async fetchAsset(assetUrl, contextEntry, refType) {
+	// `mediaType` is `image`, `audio`, `video`, or undefined
+	async fetchAsset(assetUrl, contextEntry, refType, mediaType) {
 		if(refType ? refType === "disabled" : !this.#downloadAssets) {
+			return assetUrl;
+		}
+
+		if(contextEntry?.source?.shouldDownloadAssets?.(mediaType) === false) {
 			return assetUrl;
 		}
 

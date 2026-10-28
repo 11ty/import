@@ -359,6 +359,7 @@ class Importer {
 		let postTypes;
 		let comments;
 		let content;
+		let assets;
 		let limit;
 		let until;
 		let contentSelector;
@@ -372,6 +373,7 @@ class Importer {
 			postTypes = options.postTypes;
 			comments = options.comments;
 			content = options.content;
+			assets = options.assets;
 			limit = options.limit;
 			until = options.until;
 			contentSelector = options.contentSelector;
@@ -436,6 +438,10 @@ class Importer {
 			source.setContent(content);
 		}
 
+		if(assets !== undefined) {
+			source.setAssets(assets);
+		}
+
 		this.sources.push(source);
 	}
 
@@ -485,7 +491,8 @@ class Importer {
 
 		for(let mediaType in relatedMedia || {}) {
 			let rawUrl = relatedMedia[mediaType];
-			let localUrl = await this.fetcher.fetchAsset(rawUrl, cleanEntry);
+			// Related media (e.g. `featuredImage`) are images
+			let localUrl = await this.fetcher.fetchAsset(rawUrl, cleanEntry, undefined, "image");
 
 			// TODO parallel
 			cleanEntry.metadata.media[mediaType] = localUrl;
@@ -516,7 +523,7 @@ class Importer {
 
 			let transformed = { ...author };
 			if(author.avatarUrl) {
-				transformed.avatarUrl = await this.fetcher.fetchAsset(author.avatarUrl, cleanEntry, this.getAvatarReferenceType());
+				transformed.avatarUrl = await this.fetcher.fetchAsset(author.avatarUrl, cleanEntry, this.getAvatarReferenceType(), "image");
 				this.#keepAsset(transformed.avatarUrl, cleanEntry);
 			}
 
@@ -569,7 +576,7 @@ class Importer {
 		if(!author?.avatarUrl) {
 			return author;
 		}
-		let avatarUrl = await this.fetcher.fetchAsset(author.avatarUrl, entry, this.getAvatarReferenceType());
+		let avatarUrl = await this.fetcher.fetchAsset(author.avatarUrl, entry, this.getAvatarReferenceType(), "image");
 		this.#keepAsset(avatarUrl, entry);
 		return { ...author, avatarUrl };
 	}

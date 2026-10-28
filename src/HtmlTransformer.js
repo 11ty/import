@@ -1,9 +1,17 @@
 import path from "node:path";
 import posthtml from "posthtml";
 import urls from "@11ty/posthtml-urls";
+import urlsDefaults from "@11ty/posthtml-urls/lib/defaultOptions.js";
 import * as entities from "entities";
 
 const ASSET_TAGS = ["img", "video", "audio", "source", "link", "script", "track"];
+// Media type of an element, `<source>` and `<track>` use their parent’s
+const MEDIA_TAGS = {
+	img: "image",
+	picture: "image",
+	audio: "audio",
+	video: "video",
+};
 
 class HtmlTransformer {
 	#fetcher;
@@ -108,6 +116,36 @@ class HtmlTransformer {
 		return siteRelativeUrl;
 	}
 
+	// Elements (and their descendants) of media types the source doesn’t download
+	static getSkippedNodes(tree, source) {
+		let nodes = new WeakSet();
+		let add = node => {
+			if(node && typeof node === "object") {
+				nodes.add(node);
+				for(let child of node.content || []) {
+					add(child);
+				}
+			}
+			return node;
+		};
+		let tags = Object.keys(MEDIA_TAGS).filter(tag => source.shouldDownloadAssets(MEDIA_TAGS[tag]) === false);
+		if(tags.length) {
+			tree.match(tags.map(tag => ({ tag })), add);
+		}
+		return nodes;
+	}
+
+	// Default posthtml-urls filter minus skipped nodes, `eachURL` only receives the tag name
+	static getUrlsFilter(skippedNodes) {
+		return Object.fromEntries(Object.entries(urlsDefaults.filter).map(([tag, attrs]) => [
+			tag,
+			Object.fromEntries(Object.entries(attrs).map(([attr, accept]) => [
+				attr,
+				(node, attrName) => !skippedNodes.has(node) && (typeof accept === "function" ? accept(node, attrName) : accept),
+			])),
+		]));
+	}
+
 	async transform(content, entry) {
 		let options = {
 			eachURL: async (rawUrl, attr, tagName) => {
@@ -130,7 +168,12 @@ class HtmlTransformer {
 		};
 
 		let result = await posthtml()
-			.use(urls(options))
+			.use(tree => {
+				if(entry.source?.shouldDownloadAssets) {
+					options.filter = HtmlTransformer.getUrlsFilter(HtmlTransformer.getSkippedNodes(tree, entry.source));
+				}
+				return urls(options)(tree);
+			})
 			.process(content);
 
 		return result.html;

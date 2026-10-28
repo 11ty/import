@@ -69,6 +69,11 @@ export class Rss extends DataSource {
 		return { url: enclosureUrl, fromEnclosure: Boolean(enclosureUrl) };
 	}
 
+	// Escaped (`&lt;p&gt;`) or CDATA (`<p>`) markup, RSS doesn’t declare a content type
+	static looksLikeHtml(content) {
+		return typeof content === "string" && /<\/?[a-z][a-z0-9-]*(\s[^<>]*)?\/?>/i.test(entities.decodeHTML(content));
+	}
+
 	static getItunesImageUrl(container) {
 		return MediaRss.toArray(container?.["itunes:image"])[0]?.["@_href"];
 	}
@@ -99,6 +104,8 @@ export class Rss extends DataSource {
 		}
 
 		let content = rawEntry["content:encoded"] || rawEntry.content || rawEntry.description;
+		// Checked before media markup is appended
+		let isHtml = Rss.looksLikeHtml(content);
 
 		let enclosures = MediaRss.toArray(rawEntry.enclosure).map(enclosure => ({ url: enclosure["@_url"], type: enclosure["@_type"] }));
 		content = MediaRss.appendToContent(content, [
@@ -139,7 +146,7 @@ export class Rss extends DataSource {
 			date: created,
 			// dateUpdated: rawEntry.updated,
 			content,
-			// contentType: "", // unknown
+			...(isHtml ? { contentType: "html" } : {}),
 		}
 	}
 

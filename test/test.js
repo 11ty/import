@@ -1203,6 +1203,10 @@ test("RSS podcast feeds without <link>", async (t) => {
 	assert.equal(one.content, `One
 <audio controls src="https://cdn.example.com/episodes/1-episode-one.mp3"></audio>`);
 
+	// Only HTML content is marked as HTML
+	assert.equal(one.contentType, undefined);
+	assert.equal(two.contentType, "html");
+
 	// isPermaLink="true"
 	assert.equal(two.url, "https://example.com/episodes/two/");
 	assert.equal(two.filePath, "episodes/two.html");
@@ -1219,6 +1223,82 @@ test("RSS podcast feeds without <link>", async (t) => {
 	assert.equal(four.filePathSlug, "example-4");
 	assert.equal(four.filePath, "example-4.html");
 	assert.equal(four.uuid, "11ty/import::rss::Example-4");
+});
+
+test("Per-source assets option skips asset downloads", async (t) => {
+	let feed = Fetcher.parseXml(fs.readFileSync("./test/sources/podcast-feed.xml", "utf8"));
+	let getFetchedUrls = async (options) => {
+		let importer = new Importer();
+		importer.setVerbose(false);
+		importer.setDryRun(true);
+		importer.addSource("rss", { url: "https://example.com/feed.xml", ...options });
+		importer.addDataOverride("rss", "https://example.com/feed.xml", feed);
+
+		let fetched = [];
+		importer.fetcher.fetch = async (url) => {
+			fetched.push(url);
+			throw new Error("No network in tests");
+		};
+
+		let entries = await importer.getEntries({ contentType: "html" });
+		let one = entries.find(entry => entry.title === "Episode One");
+		assert.equal(one.metadata.media.featuredImage, "https://example.com/episode-one.jpg");
+		assert.ok(one.content.includes(`<audio controls src="https://cdn.example.com/episodes/1-episode-one.mp3"></audio>`));
+		return fetched;
+	};
+
+	assert.ok((await getFetchedUrls({})).includes("https://example.com/episode-one.jpg"));
+	let all = await getFetchedUrls({});
+	assert.ok(all.includes("https://example.com/inline.jpg"));
+	assert.ok(all.includes("https://cdn.example.com/episodes/2-episode-two.mp3"));
+
+	assert.deepEqual(await getFetchedUrls({ assets: false }), []);
+	assert.deepEqual(await getFetchedUrls({ assets: ["audio"] }), ["https://cdn.example.com/episodes/2-episode-two.mp3"]);
+
+	let images = await getFetchedUrls({ assets: "image,video" });
+	assert.ok(images.includes("https://example.com/episode-one.jpg"));
+	assert.ok(images.includes("https://example.com/inline.jpg"));
+	assert.ok(!images.some(url => url.endsWith(".mp3")));
+
+	assert.throws(() => new Importer().addSource("rss", { url: "https://example.com/feed.xml", assets: ["mp3"] }), /Invalid value for the assets option/);
+});
+
+test("Per-source assets media types in content", async (t) => {
+	let { transformer, fetched } = getLinkTransformer();
+	let source = new Rss("https://example.com/feed.xml");
+	source.setAssets(["image", "video"]);
+
+	let html = await transformer.transform([
+		`<audio src="https://cdn.example.com/episode.mp3"></audio>`,
+		`<audio><source src="https://cdn.example.com/episode.ogg" type="audio/ogg"></audio>`,
+		`<video src="https://cdn.example.com/clip.mp4"><source src="https://cdn.example.com/clip.webm"></video>`,
+		`<img src="https://cdn.example.com/photo.jpg">`,
+		`<script src="https://cdn.example.com/embed.js"></script>`,
+	].join("\n"), { url: "https://example.com/post/", source });
+
+	assert.equal(html, [
+		`<audio src="https://cdn.example.com/episode.mp3"></audio>`,
+		`<audio><source src="https://cdn.example.com/episode.ogg" type="audio/ogg"></audio>`,
+		`<video src="assets/clip.mp4"><source src="assets/clip.webm"></video>`,
+		`<img src="assets/photo.jpg">`,
+		`<script src="assets/embed.js"></script>`,
+	].join("\n"));
+	assert.deepEqual(fetched, [
+		"https://cdn.example.com/clip.mp4",
+		"https://cdn.example.com/clip.webm",
+		"https://cdn.example.com/photo.jpg",
+		"https://cdn.example.com/embed.js",
+	]);
+});
+
+test("RSS content looks like HTML", async (t) => {
+	assert.equal(Rss.looksLikeHtml("<p>Hello</p>"), true);
+	assert.equal(Rss.looksLikeHtml("&lt;p&gt;Hello&lt;/p&gt;"), true);
+	assert.equal(Rss.looksLikeHtml("Line one<br/>line two"), true);
+	assert.equal(Rss.looksLikeHtml("Plain text"), false);
+	assert.equal(Rss.looksLikeHtml("1 < 2 and 3 > 2"), false);
+	assert.equal(Rss.looksLikeHtml("Email <me@example.com>"), false);
+	assert.equal(Rss.looksLikeHtml(undefined), false);
 });
 
 test("RSS video, image enclosures, media:group, and thumbnails", async (t) => {

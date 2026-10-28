@@ -24,6 +24,8 @@ class DataSource {
 	// Failed comment requests without entries affect all of them
 	#hasUnattributedCommentErrors = false;
 	#includeContent = true;
+	// `true`, `false`, or the media types to download
+	#downloadAssets = true;
 	#fetchDataOverrides = {};
 	#outputFolder = ".";
 	#limit;
@@ -104,6 +106,33 @@ class DataSource {
 
 	shouldIncludeContent() {
 		return this.#includeContent;
+	}
+
+	static MEDIA_TYPES = ["image", "audio", "video"];
+
+	// `false` keeps all assets (including avatars) as remote URLs, a list (`["image", "video"]` or `"image,video"`) only downloads those media types
+	setAssets(downloadAssets) {
+		if(typeof downloadAssets === "string") {
+			downloadAssets = downloadAssets.split(",").map(type => type.trim()).filter(Boolean);
+		}
+
+		if(Array.isArray(downloadAssets)) {
+			let invalid = downloadAssets.filter(type => !DataSource.MEDIA_TYPES.includes(type));
+			if(invalid.length) {
+				throw new Error(`Invalid value for the assets option, must be true, false, or a list of: ${DataSource.MEDIA_TYPES.join(", ")}. Received: ${invalid.join(", ")}`);
+			}
+			this.#downloadAssets = downloadAssets;
+		} else {
+			this.#downloadAssets = Boolean(downloadAssets);
+		}
+	}
+
+	// Assets that aren’t image, audio, or video (e.g. stylesheets) are only skipped by `false`
+	shouldDownloadAssets(mediaType) {
+		if(Array.isArray(this.#downloadAssets)) {
+			return !DataSource.MEDIA_TYPES.includes(mediaType) || this.#downloadAssets.includes(mediaType);
+		}
+		return this.#downloadAssets;
 	}
 
 	// Existing comments are kept (not replaced) for these entries

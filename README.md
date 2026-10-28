@@ -364,6 +364,9 @@ importer.addSource("bluesky", "@11ty.dev");
 importer.addSource("wordpress", { url: "https://blog.fontawesome.com", comments: false });
 // Front matter only, no content or comments (e.g. for cross links)
 importer.addSource("youtubeUser", { id: "UCskGTioqrMBcw8pd14_334A", content: false });
+// Don’t download assets for this source, or only some media types (`image`, `audio`, `video`)
+importer.addSource("rss", { url: "https://feeds.buzzsprout.com/2092855.rss", assets: false });
+importer.addSource("rss", { url: "https://feeds.buzzsprout.com/2092855.rss", assets: ["image"] });
 
 
 // Simple CSS selector (class names only) for preserved elements in Markdown conversion
