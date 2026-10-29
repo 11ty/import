@@ -1,5 +1,4 @@
 import { DataSource } from "../DataSource.js";
-import { MediaRss } from "../MediaRss.js";
 
 // Public archive and post APIs, paid posts are previews unless a subscriber’s `SUBSTACK_SID` cookie value is supplied
 export class Substack extends DataSource {
@@ -137,9 +136,6 @@ export class Substack extends DataSource {
 		}
 
 		let content = post.body_html || "";
-		if(post.podcast_url) {
-			content = MediaRss.appendToContent(content, [{ url: post.podcast_url, medium: "audio" }]);
-		}
 
 		let cleanEntry = {
 			uuid: this.getUniqueIdFromEntry(post),

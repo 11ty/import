@@ -32,6 +32,11 @@ class MediaRss {
 		return MediaRss.getThumbnailUrl(rawEntry) || MediaRss.toArray(rawEntry["media:group"]).map(group => MediaRss.getThumbnailUrl(group)).find(Boolean);
 	}
 
+	// Feed media is appended after the post body, an audio player there isn’t useful
+	static isAppendable({ url, medium }) {
+		return url && medium && medium !== "audio";
+	}
+
 	// Returns normalized `{ url, type, medium, description, poster }` media from <media:content> and <media:group>
 	static getMediaFromEntry(rawEntry) {
 		let media = MediaRss.getMediaFromContainer(rawEntry, MediaRss.getThumbnailUrl(rawEntry));
@@ -62,16 +67,16 @@ class MediaRss {
 				description: MediaRss.getText(source["media:description"]),
 				poster: MediaRss.getThumbnailUrl(source) || thumbnailUrl,
 			};
-		}).filter(entry => entry.url && entry.medium);
+		}).filter(entry => MediaRss.isAppendable(entry));
 	}
 
-	// `{ url, type }` enclosures, only image/video/audio types are supported
+	// `{ url, type }` enclosures, only image/video types are supported
 	static getMediaFromEnclosures(enclosures) {
 		return enclosures.map(({ url, type }) => ({
 			url,
 			type,
 			medium: MediaRss.getMedium({ type }),
-		})).filter(entry => entry.url && entry.medium);
+		})).filter(entry => MediaRss.isAppendable(entry));
 	}
 
 	static getHtml(media) {

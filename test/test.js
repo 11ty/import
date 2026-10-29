@@ -1151,7 +1151,7 @@ test("RSS guid without attributes", async (t) => {
 	]);
 });
 
-test("RSS audio enclosures and media:content", async (t) => {
+test("RSS enclosures and media:content, audio is not appended", async (t) => {
 	let importer = new Importer();
 
 	importer.setVerbose(false);
@@ -1178,9 +1178,7 @@ test("RSS audio enclosures and media:content", async (t) => {
 
 	let [entry] = await importer.getEntries();
 	assert.equal(entry.content, `Episode
-<audio controls src="https://example.com/clip.ogg"></audio>
-<img src="https://example.com/photo.png" alt="">
-<audio controls src="https://example.com/episode.mp3"></audio>`);
+<img src="https://example.com/photo.png" alt="">`);
 });
 
 test("RSS podcast feeds without <link>", async (t) => {
@@ -1200,8 +1198,7 @@ test("RSS podcast feeds without <link>", async (t) => {
 	assert.equal(one.filePath, "episode-one.html");
 	assert.equal(one.metadata.media.featuredImage, "https://example.com/episode-one.jpg");
 	assert.deepEqual(one.authors, [{ name: "Example Podcast", url: "https://example.com/" }]);
-	assert.equal(one.content, `One
-<audio controls src="https://cdn.example.com/episodes/1-episode-one.mp3"></audio>`);
+	assert.equal(one.content, "One");
 
 	// Only HTML content is marked as HTML
 	assert.equal(one.contentType, undefined);
@@ -1243,7 +1240,6 @@ test("Per-source assets option skips asset downloads", async (t) => {
 		let entries = await importer.getEntries({ contentType: "html" });
 		let one = entries.find(entry => entry.title === "Episode One");
 		assert.equal(one.metadata.media.featuredImage, "https://example.com/episode-one.jpg");
-		assert.ok(one.content.includes(`<audio controls src="https://cdn.example.com/episodes/1-episode-one.mp3"></audio>`));
 		return fetched;
 	};
 
@@ -1371,8 +1367,7 @@ test("Atom enclosures and Media RSS", async (t) => {
 	let [html, text] = await importer.getEntries();
 	assert.equal(html.url, "https://example.com/html/");
 	assert.equal(html.content, `<p>Hello</p>
-<img src="https://example.com/photo.png" alt="A photo">
-<audio controls="" src="https://example.com/episode.mp3"></audio>`);
+<img src="https://example.com/photo.png" alt="A photo">`);
 	assert.equal(text.content, "Hello");
 });
 
@@ -2510,7 +2505,7 @@ test("Substack", async (t) => {
 
 	assert.equal(paid.metadata.audience, "only_paid");
 	assert.equal(paid.metadata.postType, "podcast");
-	assert.equal(paid.content, `Preview\n\n<audio controls="" src="https://api.substack.com/episode.mp3"></audio>`);
+	assert.equal(paid.content, "Preview");
 	assert.equal(paid.comments, undefined);
 });
 
@@ -2648,7 +2643,7 @@ test("JSON Feed", async (t) => {
 	assert.deepEqual(one.dateUpdated, new Date("2026-10-02T12:00:00Z"));
 	assert.deepEqual(one.authors, [{ name: "Jane", url: "https://jane.example/", avatarUrl: "https://jane.example/avatar.png" }]);
 	assert.deepEqual(one.metadata, { media: { featuredImage: "https://example.com/one.jpg" } });
-	assert.equal(one.content, `Hello _world_\n\n<audio controls="" src="https://example.com/one.mp3"></audio>`);
+	assert.equal(one.content, "Hello _world_");
 
 	assert.equal(two.contentType, "text");
 	assert.equal(two.content, "Plain text");

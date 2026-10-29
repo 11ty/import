@@ -17,7 +17,7 @@
 		</item>
 		<item>
 			<title>Episode Two</title>
-			<description><![CDATA[<p>Two <img src="https://example.com/inline.jpg"></p>]]></description>
+			<description><![CDATA[<p>Two <img src="https://example.com/inline.jpg"></p><audio controls src="https://cdn.example.com/episodes/2-episode-two.mp3"></audio>]]></description>
 			<enclosure url="https://cdn.example.com/episodes/2-episode-two.mp3" length="1234" type="audio/mpeg" />
 			<guid isPermaLink="true">https://example.com/episodes/two/</guid>
 			<pubDate>Tue, 02 Jan 2024 00:00:00 GMT</pubDate>
