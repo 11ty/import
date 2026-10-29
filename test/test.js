@@ -3783,6 +3783,8 @@ test("npm", async (t) => {
 	});
 	importer.addDataOverride("npm", Npm.getDownloadsUrl("@11ty/a"), { downloads: 1234 });
 	importer.addDataOverride("npm", Npm.getDownloadsUrl("b"), { downloads: 0 });
+	importer.addDataOverride("npm", Npm.getCdnHitsUrl("@11ty/a"), { hits: { total: 567 } });
+	importer.addDataOverride("npm", Npm.getCdnHitsUrl("b"), { hits: { total: 0 } });
 
 	// Newest first across packages, only versions this user published or approved, unapproved trusted publishes only for packages they published or approved elsewhere
 	let entries = await importer.getEntries({ contentType: "markdown" });
@@ -3803,7 +3805,7 @@ test("npm", async (t) => {
 
 	assert.deepEqual(stable.authors, [{ name: "zachleat", url: "https://www.npmjs.com/~zachleat" }]);
 	assert.deepEqual(stable.tags, ["eleventy"]);
-	assert.deepEqual(stable.counts, { downloads: 1234 });
+	assert.deepEqual(stable.counts, { downloads: 1234, cdnHits: 567 });
 	assert.deepEqual(stable.metadata, { name: "@11ty/a", version: "1.0.0", distTags: ["latest"], license: "MIT", repository: "https://github.com/11ty/utils", tags: ["eleventy"] });
 	// Relative URLs resolve to the repository directory
 	assert.equal(stable.content, "See [docs](https://github.com/11ty/utils/blob/HEAD/packages/a/docs/README.md) and ![Logo](https://raw.githubusercontent.com/11ty/utils/HEAD/packages/a/logo.png)");
@@ -3831,6 +3833,7 @@ test("npm targets", async (t) => {
 	assert.equal(Npm.getRepositoryUrl("git@github.com:11ty/eleventy.git"), "https://github.com/11ty/eleventy");
 	assert.equal(Npm.getRepositoryUrl("11ty/eleventy"), "https://github.com/11ty/eleventy");
 	assert.equal(Npm.getDownloadsUrl("@11ty/eleventy", new Date("2026-10-27T12:00:00Z")), "https://api.npmjs.org/downloads/point/2025-10-26:2026-10-26/@11ty/eleventy");
+	assert.equal(Npm.getCdnHitsUrl("@11ty/eleventy"), "https://data.jsdelivr.com/v1/stats/packages/npm/@11ty/eleventy?period=year");
 });
 
 test("GitHub releases", async (t) => {

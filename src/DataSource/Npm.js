@@ -13,6 +13,7 @@ export class Npm extends DataSource {
 	static REGISTRY = "https://registry.npmjs.org";
 	static DOWNLOADS_API = "https://api.npmjs.org/downloads/point";
 	static DOWNLOADS_DAYS = 365;
+	static CDN_STATS_API = "https://data.jsdelivr.com/v1/stats/packages/npm";
 	static WEBSITE = "https://www.npmjs.com";
 	static MISSING_README = "ERROR: No README data found!";
 	static ASSET_TAGS = ["img", "video", "audio", "source"];
@@ -74,6 +75,18 @@ export class Npm extends DataSource {
 		} catch(e) {}
 	}
 
+	static getCdnHitsUrl(name) {
+		return `${Npm.CDN_STATS_API}/${name}?period=year`;
+	}
+
+	// jsDelivr requests for the package’s files in the previous year, failed requests (logged as errors) have no count
+	async getCdnHits(name) {
+		try {
+			let data = await this.getData(Npm.getCdnHitsUrl(name), this.getType());
+			return data?.hits?.total;
+		} catch(e) {}
+	}
+
 	// Newest first without `0.0.0-stage` versions, unpublished packages have no versions
 	async getEntries() {
 		let names = Object.keys(await this.getData(this.getUrl(), this.getType()) || {}).sort();
@@ -85,9 +98,12 @@ export class Npm extends DataSource {
 			.sort((a, b) => Date.parse(b.packument.time[b.version]) - Date.parse(a.packument.time[a.version]));
 
 		let packageNames = [...new Set(releases.map(({ packument }) => packument.name))];
-		let downloads = Object.fromEntries(await Promise.all(packageNames.map(async name => [name, await this.getDownloads(name)])));
+		let counts = Object.fromEntries(await Promise.all(packageNames.map(async name => {
+			let [downloads, cdnHits] = await Promise.all([this.getDownloads(name), this.getCdnHits(name)]);
+			return [name, { downloads, cdnHits }];
+		})));
 		for(let release of releases) {
-			release.downloads = downloads[release.packument.name];
+			release.counts = counts[release.packument.name];
 		}
 
 		return this.finalizeEntries(await this.getCleanedEntries(releases));
@@ -185,7 +201,7 @@ export class Npm extends DataSource {
 	}
 
 	// Publisher (or approver) of the version, falls back to its author
-	async cleanEntry({ packument, version, downloads }) {
+	async cleanEntry({ packument, version, counts: rawCounts }) {
 		let release = packument.versions[version] || {};
 		let { created } = this.getRawEntryDates({ packument, version });
 		let publisher = Npm.getPublisherName(release) || (!this.isOrg && Npm.isTrustedPublish(release) ? this.name : undefined);
@@ -226,7 +242,7 @@ export class Npm extends DataSource {
 			metadata,
 		};
 
-		let counts = DataSource.cleanCounts({ downloads });
+		let counts = DataSource.cleanCounts(rawCounts);
 		if(counts) {
 			cleanEntry.counts = counts;
 		}
