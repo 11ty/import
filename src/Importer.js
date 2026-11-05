@@ -581,10 +581,10 @@ class Importer {
 		return { ...author, avatarUrl };
 	}
 
-	// `COMMENT_ASSETS` downloads content assets and avatars, `COMMENT_AVATARS` downloads avatars only
+	// `shouldDownloadCommentAssets` downloads content assets and avatars, `COMMENT_AVATARS` downloads avatars only
 	async transformComments(entry) {
-		let { COMMENT_ASSETS, COMMENT_AVATARS } = entry.source?.constructor || {};
-		if(!COMMENT_ASSETS && !COMMENT_AVATARS) {
+		let source = entry.source;
+		if(typeof source?.shouldDownloadCommentAssets !== "function") {
 			return;
 		}
 
@@ -595,10 +595,11 @@ class Importer {
 
 			entry[key] = await Promise.all(entry[key].map(async item => {
 				let transformed = { ...item };
-				if(item.content && COMMENT_ASSETS) {
+				let downloadAssets = source.shouldDownloadCommentAssets(item, entry);
+				if(item.content && downloadAssets) {
 					transformed.content = await this.htmlTransformer.transform(item.content, entry);
 				}
-				if(item.author) {
+				if(item.author && (downloadAssets || source.constructor.COMMENT_AVATARS)) {
 					transformed.author = await this.#fetchAvatar(item.author, entry);
 				}
 				return transformed;

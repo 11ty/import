@@ -218,13 +218,27 @@ test("Bluesky rich text, embeds, and paging past reposts", async (t) => {
 				record: { text: "Card", createdAt: "2024-11-30T00:00:00.000Z" },
 				embed: { $type: "app.bsky.embed.external#view", external: { uri: "https://example.com/", title: "Example", description: "Kept" } },
 			},
+		}, {
+			post: {
+				uri: `at://${did}/app.bsky.feed.post/seven`,
+				author,
+				record: { text: "", createdAt: "2024-11-29T00:00:00.000Z" },
+				embed: { $type: "app.bsky.embed.external#view", external: { uri: "https://static.klipy.com/ii/abc/gCVHAvwqi8zXD8Fspd8.gif?hh=275&ww=498", title: "Tobias Tobias Funke", description: "Alt: Tobias Funke looks in the mirror with blue skin" } },
+			},
+		}, {
+			post: {
+				uri: `at://${did}/app.bsky.feed.post/eight`,
+				author,
+				record: { text: "", createdAt: "2024-11-28T00:00:00.000Z" },
+				embed: { $type: "app.bsky.embed.external#view", external: { uri: "https://media.tenor.com/abc/funke.gif?hh=200&ww=300", title: "Funke", description: "" } },
+			},
 		}],
 	});
 	importer.addDataOverride("bluesky", `https://plc.directory/${did}`, {
 		service: [{ id: "#atproto_pds", type: "AtprotoPersonalDataServer", serviceEndpoint: "https://pds.example" }],
 	});
 
-	let [one, two, three, four, five, six] = await importer.getEntries({ contentType: "html" });
+	let [one, two, three, four, five, six, seven, eight] = await importer.getEntries({ contentType: "html" });
 	let quoteDate = new BlueskyUser("x").toReadableDate("2024-12-04T00:00:00.000Z");
 	assert.equal(one.content, `<p>Hi <a href="https://bsky.app/profile/did:plc:jane">@jane.example</a> 🎉 <a href="https://bsky.app/hashtag/11ty">#11ty</a> <a href="https://example.com/long/url">example.com/long...</a></p>
 <img src="https://cdn.bsky.app/img/a@jpeg" alt="Alt">
@@ -242,6 +256,8 @@ test("Bluesky rich text, embeds, and paging past reposts", async (t) => {
 	assert.equal(six.content, `<p>Card</p>
 <p><a href="https://example.com/">Example</a><br>
 Kept</p>`);
+	assert.equal(seven.content, `<img src="https://static.klipy.com/ii/abc/gCVHAvwqi8zXD8Fspd8.gif?hh=275&amp;ww=498" alt="Tobias Funke looks in the mirror with blue skin">`);
+	assert.equal(eight.content, `<img src="https://media.tenor.com/abc/funke.gif?hh=200&amp;ww=300" alt="Funke">`);
 });
 
 test("WordPress import", async (t) => {
@@ -1812,6 +1828,27 @@ test("Bluesky replies", async (t) => {
 		record: { text: "Content warning", createdAt: "2024-12-05T18:00:00.000Z", reply: { parent: { uri: root } } },
 	};
 
+	let gif = {
+		uri: "at://did:plc:gif/app.bsky.feed.post/fff",
+		author: { handle: "gif.example" },
+		record: { text: "", createdAt: "2024-12-05T19:00:00.000Z", reply: { parent: { uri: root } } },
+		embed: { $type: "app.bsky.embed.external#view", external: { uri: "https://static.klipy.com/ii/abc/funke.gif?hh=275&ww=498", title: "Tobias Tobias Funke", description: "Alt: Tobias Funke looks in the mirror with blue skin" } },
+	};
+
+	let image = {
+		uri: "at://did:plc:image/app.bsky.feed.post/ggg",
+		author: { handle: "image.example" },
+		record: { text: "", createdAt: "2024-12-05T20:00:00.000Z", reply: { parent: { uri: root } } },
+		embed: { $type: "app.bsky.embed.images#view", images: [{ fullsize: "https://cdn.bsky.app/img/reply@jpeg", alt: "Reply image" }] },
+	};
+
+	let quote = {
+		uri: "at://did:plc:quote/app.bsky.feed.post/hhh",
+		author: { handle: "quote.example" },
+		record: { text: "Look", createdAt: "2024-12-05T21:00:00.000Z", reply: { parent: { uri: root } } },
+		embed: { $type: "app.bsky.embed.record#view", record: { $type: "app.bsky.embed.record#viewRecord", uri: "at://did:plc:jane/app.bsky.feed.post/q", author: { handle: "jane.example" }, value: { text: "Quoted" } } },
+	};
+
 	importer.addDataOverride("bluesky", `https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(root)}&depth=100&parentHeight=0`, {
 		thread: {
 			post: { uri: root },
@@ -1819,6 +1856,9 @@ test("Bluesky replies", async (t) => {
 				{ post: reply, replies: [{ post: nested, replies: [] }] },
 				{ post: hidden, replies: [] },
 				{ post: labeled, replies: [] },
+				{ post: gif, replies: [] },
+				{ post: image, replies: [] },
+				{ post: quote, replies: [] },
 				// Blocked
 				{ $type: "app.bsky.feed.defs#blockedPost", uri: "at://did:plc:blocked/app.bsky.feed.post/ccc" },
 			],
@@ -1853,7 +1893,71 @@ test("Bluesky replies", async (t) => {
 		url: "https://bsky.app/profile/labeled.example/post/eee",
 		private: true,
 		date: new Date("2024-12-05T18:00:00.000Z"),
+	}, {
+		id: gif.uri,
+		parentId: 0,
+		url: "https://bsky.app/profile/gif.example/post/fff",
+		author: { name: "gif.example", url: "https://bsky.app/profile/gif.example" },
+		date: new Date("2024-12-05T19:00:00.000Z"),
+		content: `<img src="https://static.klipy.com/ii/abc/funke.gif?hh=275&amp;ww=498" alt="Tobias Funke looks in the mirror with blue skin">`,
+	}, {
+		id: image.uri,
+		parentId: 0,
+		url: "https://bsky.app/profile/image.example/post/ggg",
+		author: { name: "image.example", url: "https://bsky.app/profile/image.example" },
+		date: new Date("2024-12-05T20:00:00.000Z"),
+		content: `<img src="https://cdn.bsky.app/img/reply@jpeg" alt="Reply image">`,
+	}, {
+		id: quote.uri,
+		parentId: 0,
+		url: "https://bsky.app/profile/quote.example/post/hhh",
+		author: { name: "quote.example", url: "https://bsky.app/profile/quote.example" },
+		date: new Date("2024-12-05T21:00:00.000Z"),
+		content: `<p>Look</p>\n<p><a href="https://bsky.app/profile/jane.example/post/q">Quoted post</a></p>`,
 	}]);
+});
+
+test("Bluesky downloads assets in your own replies only", async (t) => {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("relative");
+	importer.addSource("bluesky", "zachleat.com");
+	let [source] = importer.getSources();
+	let fetched = [];
+	source.getLocalAsset = async url => {
+		fetched.push(url);
+		return { body: Buffer.from("gif"), contentType: "image/gif" };
+	};
+
+	let did = "did:plc:xpchjovbk6sxl3bv74z7cs54";
+	let root = `at://${did}/app.bsky.feed.post/3lckusgtkuk2r`;
+	let gif = uri => ({ $type: "app.bsky.embed.external#view", external: { uri, title: "GIF", description: "" } });
+	let other = {
+		uri: "at://did:plc:jane/app.bsky.feed.post/aaa",
+		author: { handle: "jane.example", avatar: "https://cdn.bsky.app/jane.jpg" },
+		record: { text: "", createdAt: "2024-12-05T15:00:00.000Z", reply: { parent: { uri: root } } },
+		embed: gif("https://static.klipy.com/ii/a/jane.gif"),
+	};
+	let own = {
+		uri: `at://${did}/app.bsky.feed.post/bbb`,
+		author: { handle: "zachleat.com", avatar: "https://cdn.bsky.app/zach.jpg" },
+		record: { text: "", createdAt: "2024-12-05T16:00:00.000Z", reply: { parent: { uri: other.uri } } },
+		embed: gif("https://static.klipy.com/ii/b/zach.gif?hh=200&ww=353"),
+	};
+
+	importer.addDataOverride("bluesky", BLUESKY_FEED_URL, getBlueskyFeed());
+	importer.addDataOverride("bluesky", `https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(root)}&depth=100&parentHeight=0`, {
+		thread: { post: { uri: root }, replies: [{ post: other, replies: [{ post: own, replies: [] }] }] },
+	});
+
+	let [entry] = await importer.getEntries();
+	let [first, second] = entry.comments;
+	assert.equal(first.content, `<img src="https://static.klipy.com/ii/a/jane.gif" alt="GIF">`);
+	assert.equal(first.author.avatarUrl, "https://cdn.bsky.app/jane.jpg");
+	assert.match(second.content, /^<img src="assets\/zach-\w+\.gif" alt="GIF">$/);
+	assert.match(second.author.avatarUrl, /^\/assets\/zach-\w+\.jpg$/);
+	assert.ok(!fetched.some(url => url.includes("jane")));
 });
 
 test("Escaped HTML stays escaped for JSON sources, Atom feeds are decoded", async (t) => {

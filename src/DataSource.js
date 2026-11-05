@@ -135,6 +135,11 @@ class DataSource {
 		return this.#downloadAssets;
 	}
 
+	// Per-comment `COMMENT_ASSETS`, e.g. only your own replies in a thread
+	shouldDownloadCommentAssets(comment, entry) {
+		return this.constructor.COMMENT_ASSETS;
+	}
+
 	// Existing comments are kept (not replaced) for these entries
 	setCommentsIncomplete(entries) {
 		for(let entry of entries) {

@@ -150,6 +150,15 @@ export class BlueskyUser extends DataSource {
 		}));
 	}
 
+	// GIF picker posts (Tenor, Klipy) are external embeds pointing at a .gif
+	static isGifUrl(uri) {
+		try {
+			return new URL(uri).pathname.toLowerCase().endsWith(".gif");
+		} catch(e) {
+			return false;
+		}
+	}
+
 	static getLink(url, text) {
 		return `<a href="${entities.escapeAttribute(url)}">${entities.escapeText(text || url)}</a>`;
 	}
@@ -222,6 +231,9 @@ export class BlueskyUser extends DataSource {
 		}
 		if(type === "app.bsky.embed.external#view") {
 			let { uri, title, description } = embed.external || {};
+			if(BlueskyUser.isGifUrl(uri)) {
+				return MediaRss.getHtml([{ url: uri, medium: "image", description: description?.replace(/^Alt: /, "") || title }]);
+			}
 			if(BlueskyUser.hasLinkFacet(post.record || post.value, uri)) {
 				return "";
 			}
@@ -303,7 +315,7 @@ export class BlueskyUser extends DataSource {
 	}
 
 	// Flattens the reply tree (blocked or deleted replies don’t have a `post`)
-	static getReplies(thread, rootUri, comments = []) {
+	async getReplies(thread, rootUri, comments = []) {
 		for(let reply of thread?.replies || []) {
 			let post = reply?.post;
 			if(!post) {
@@ -311,6 +323,10 @@ export class BlueskyUser extends DataSource {
 			}
 
 			let parentUri = post.record?.reply?.parent?.uri;
+			let content = [
+				BlueskyUser.getRichTextHtml(post.record?.text, post.record?.facets),
+				await this.getEmbedHtml(post.embed, post, { isQuoted: true }),
+			].filter(Boolean).join("\n");
 			comments.push(DataSource.cleanComment({
 				id: post.uri,
 				parentId: parentUri === rootUri ? 0 : parentUri,
@@ -321,14 +337,20 @@ export class BlueskyUser extends DataSource {
 					avatarUrl: post.author.avatar,
 				},
 				date: new Date(Date.parse(post.record?.createdAt || post.indexedAt)),
-				content: BlueskyUser.getRichTextHtml(post.record?.text, post.record?.facets),
+				content,
 				isPrivate: BlueskyUser.isPrivate(post),
 			}));
 
-			BlueskyUser.getReplies(reply, rootUri, comments);
+			await this.getReplies(reply, rootUri, comments);
 		}
 
 		return comments;
+	}
+
+	// Only your own replies, other people’s media and avatars stay remote
+	shouldDownloadCommentAssets(comment, entry) {
+		let ownDid = BlueskyUser.parseAtUri(BlueskyUser.getAtUri(entry)).did;
+		return Boolean(ownDid) && BlueskyUser.parseAtUri(comment.id).did === ownDid;
 	}
 
 	async addComments(entries) {
@@ -341,7 +363,7 @@ export class BlueskyUser extends DataSource {
 			}
 
 			let data = await this.getOptionalData(`${BlueskyUser.API}app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=${BlueskyUser.THREAD_DEPTH}&parentHeight=0`, "json", [entry]);
-			entry.comments = DataSource.sortComments(BlueskyUser.getReplies(data?.thread, uri));
+			entry.comments = DataSource.sortComments(await this.getReplies(data?.thread, uri));
 		}));
 	}
 }
