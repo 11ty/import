@@ -3400,12 +3400,12 @@ test("Webmentions", async (t) => {
 	assert.equal(one.url, "http://www.example.com/one/");
 	assert.equal(one.filePath, "one.html");
 	assert.deepEqual(one.comments, [
-		{ id: 10, parentId: 0, url: "https://site.example/reply", author: { name: "Author 10", url: "https://author10.example/" }, date: new Date("2024-01-03T00:00:00Z"), content: "<p>Reply</p>", type: "reply" },
-		{ id: 11, parentId: 0, url: "https://brid.gy/11", author: { name: "Author 11", url: "https://author11.example/" }, date: new Date("2024-01-05T00:00:00Z"), content: "Plain<br>\ntext", type: "mention" },
-		{ id: 13, parentId: 0, url: "https://brid.gy/13", private: true, date: new Date("2024-01-05T00:00:00Z"), type: "reply" },
+		{ id: 10, parentId: 0, url: "https://site.example/reply", author: { name: "Author 10", url: "https://author10.example/" }, date: new Date("2024-01-03T00:00:00Z"), content: "<p>Reply</p>", type: "reply", source: "https://brid.gy/10", target: "http://www.example.com/one/index.html#comments" },
+		{ id: 11, parentId: 0, url: "https://brid.gy/11", author: { name: "Author 11", url: "https://author11.example/" }, date: new Date("2024-01-05T00:00:00Z"), content: "Plain<br>\ntext", type: "mention", source: "https://brid.gy/11", target: "https://example.com/one?utm_source=x" },
+		{ id: 13, parentId: 0, url: "https://brid.gy/13", private: true, date: new Date("2024-01-05T00:00:00Z"), type: "reply", source: "https://brid.gy/13", target: "https://example.com/one/" },
 	]);
-	assert.deepEqual(one.likes, [{ id: 14, url: "https://site.example/like", date: new Date("2024-01-05T00:00:00Z"), author: { name: "Author 14", url: "https://author14.example/" } }]);
-	assert.deepEqual(one.rsvps, [{ id: 15, url: "https://brid.gy/15", date: new Date("2024-01-05T00:00:00Z"), author: { name: "Author 15", url: "https://author15.example/" }, rsvp: "yes" }]);
+	assert.deepEqual(one.likes, [{ id: 14, url: "https://site.example/like", date: new Date("2024-01-05T00:00:00Z"), author: { name: "Author 14", url: "https://author14.example/" }, source: "https://brid.gy/14", target: "https://example.com/one/" }]);
+	assert.deepEqual(one.rsvps, [{ id: 15, url: "https://brid.gy/15", date: new Date("2024-01-05T00:00:00Z"), author: { name: "Author 15", url: "https://author15.example/" }, rsvp: "yes", source: "https://brid.gy/15", target: "https://example.com/one/" }]);
 	assert.equal(two.reposts.length, 1);
 	assert.equal(two.comments, undefined);
 	assert.equal(importer.getCounts().errors, 0);

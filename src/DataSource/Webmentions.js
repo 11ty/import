@@ -125,6 +125,11 @@ export class Webmentions extends DataSource {
 		return Object.fromEntries(Object.entries({ name, url, avatarUrl: photo }).filter(([key, value]) => value));
 	}
 
+	// Original source and target, e.g. to tell Bridgy copies apart or to group query string variants of a url
+	static getEndpoints(mention) {
+		return Object.fromEntries(Object.entries({ source: mention["wm-source"], target: mention["wm-target"] }).filter(([key, value]) => value));
+	}
+
 	static getDate(mention) {
 		let date = mention.published || mention["wm-received"];
 		if(date) {
@@ -142,7 +147,7 @@ export class Webmentions extends DataSource {
 			isPrivate: mention["wm-private"] === true,
 		});
 		comment.type = Webmentions.COMMENT_TYPES[mention["wm-property"]];
-		return comment;
+		return Object.assign(comment, Webmentions.getEndpoints(mention));
 	}
 
 	static cleanReaction(mention) {
@@ -157,7 +162,7 @@ export class Webmentions extends DataSource {
 		if(mention.rsvp) {
 			reaction.rsvp = mention.rsvp;
 		}
-		return reaction;
+		return Object.assign(reaction, Webmentions.getEndpoints(mention));
 	}
 
 	// Earliest and latest received dates, so `within` keeps (and rewrites) a target’s full list
