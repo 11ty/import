@@ -38,6 +38,7 @@ import { Linktree } from "./DataSource/Linktree.js";
 import { Npm } from "./DataSource/Npm.js";
 import { GitHub } from "./DataSource/GitHub.js";
 import { GitHubGist } from "./DataSource/GitHubGist.js";
+import { GitHistory } from "./DataSource/GitHistory.js";
 import { CodePen } from "./DataSource/CodePen.js";
 import { Webmentions } from "./DataSource/Webmentions.js";
 import { Letterboxd } from "./DataSource/Letterboxd.js";
@@ -210,7 +211,7 @@ class Importer {
 	static REFERENCE_TYPES = ["relative", "colocate", "absolute", "disabled"];
 
 	// Keys in a post’s data file (e.g. `my-post.json`), filled by sources
-	static DATA_KEYS = ["comments", "likes", "reposts", "bookmarks", "rsvps"];
+	static DATA_KEYS = ["comments", "likes", "reposts", "bookmarks", "rsvps", "commits"];
 
 	// Avatars are shared across posts, so default to the root assets folder (or disabled with assets)
 	setAvatarReferenceType(refType) {
@@ -328,6 +329,8 @@ class Importer {
 				cls = GitHub;
 			} else if(type === "github-gist") {
 				cls = GitHubGist;
+			} else if(type === "git") {
+				cls = GitHistory;
 			} else if(type === "codepen") {
 				cls = CodePen;
 			} else if(type === "webmention" || type === "webmentions") {
@@ -357,6 +360,7 @@ class Importer {
 		let label;
 		let filepathFormat;
 		let postTypes;
+		let paths;
 		let comments;
 		let content;
 		let assets;
@@ -371,6 +375,7 @@ class Importer {
 			label = options.label;
 			filepathFormat = options.filepathFormat;
 			postTypes = options.postTypes;
+			paths = options.path;
 			comments = options.comments;
 			content = options.content;
 			assets = options.assets;
@@ -409,6 +414,13 @@ class Importer {
 				throw new Error(`The postTypes option is not supported by the ${source.constructor.TYPE} source type.`);
 			}
 			source.setPostTypes(postTypes);
+		}
+
+		if(paths) {
+			if(typeof source.setPaths !== "function") {
+				throw new Error(`The path option is not supported by the ${source.constructor.TYPE} source type.`);
+			}
+			source.setPaths(paths);
 		}
 
 		if(limit) {
@@ -1066,7 +1078,7 @@ class Importer {
 				fileContents.set(commentsPathname, commentsContent);
 
 				if(this.isVerbose) {
-					Logger.importing("comments", commentsPathname, entry.url, {
+					Logger.importing("data", commentsPathname, entry.url, {
 						size: commentsContent.length,
 						dryRun: this.dryRun
 					});

@@ -78,6 +78,10 @@ let { positionals, values } = parseArgs({
 			type: "string",
 			default: "",
 		},
+		path: {
+			type: "string",
+			default: "",
+		},
 		limit: {
 			type: "string",
 			default: "",
@@ -94,7 +98,7 @@ let { positionals, values } = parseArgs({
 });
 
 let [ type, target ] = positionals;
-let { quiet, dryrun, output, help, version, overwrite, prune, cacheduration, format, assetrefs, avatarrefs, within, preserve, posttypes, limit, until, contentselector } = values;
+let { quiet, dryrun, output, help, version, overwrite, prune, cacheduration, format, assetrefs, avatarrefs, within, preserve, posttypes, path, limit, until, contentselector } = values;
 
 if(version) {
 	const require = createRequire(import.meta.url);
@@ -149,6 +153,15 @@ if(help) {
   # WordPress post types to import (default: posts,pages)
   npx @11ty/import wordpress [target] --posttypes=posts,pages,product
   npx @11ty/import wordpressxml [file] --posttypes=posts,pages,product
+
+  # Import git commit history for files, one data file per file
+  # Reads a local checkout when there is one, otherwise the GitHub API (optional GITHUB_TOKEN)
+  npx @11ty/import git . --path=README.md
+  npx @11ty/import git ~/Code/eleventy --path=src/Eleventy.js,README.md
+  npx @11ty/import git 11ty/eleventy --path=README.md
+
+  # A trailing slash imports every file in a folder
+  npx @11ty/import git 11ty/11ty-website --path=src/blog/
 
   # Only the newest entries (stops fetching once reached)
   npx @11ty/import [type] [target] --limit=5
@@ -217,9 +230,10 @@ importer.setSafeMode(!overwrite);
 importer.setDryRun(dryrun);
 importer.setPruneAssets(prune);
 try {
-	importer.addSource(type, posttypes || limit || until || contentselector ? {
+	importer.addSource(type, posttypes || path || limit || until || contentselector ? {
 		url: target,
 		postTypes: posttypes || undefined,
+		path: path || undefined,
 		limit: limit || undefined,
 		until: until || undefined,
 		contentSelector: contentselector || undefined,

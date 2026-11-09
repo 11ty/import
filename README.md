@@ -84,6 +84,9 @@ npx @11ty/import wordpress [target] --posttypes=posts,pages,product
 # Import webmention.io webmentions into post data files (requires WEBMENTION_IO_TOKEN)
 npx @11ty/import webmentions example.com
 
+# Files to import git commit history for (a trailing `/` imports every file in a folder)
+npx @11ty/import git . --path=README.md,src/Eleventy.js
+
 ```
 
 ### Service Types
@@ -183,6 +186,7 @@ npx @11ty/import bluesky @11ty.dev
 - `devto` (DEV username or organization)
 - `flickr` (username, NSID, or profile URL, public photos and videos as still images, requires a `FLICKR_API_KEY` environment variable from the [Flickr App Garden](https://www.flickr.com/services/apps/create/))
 - `ghost` (site URL)
+- `git` (local checkout folder, or `owner/repo` or repository URL, commit history for the files in `--path`, data files only, see [Git History](#git-history))
 - `hackernews` (origin, URL, or domain, the most popular Hacker News stories linking to it, 100 by default or `--limit` up to 500, from the [Algolia Hacker News API](https://hn.algolia.com/api))
 - `github` (`owner/repo` or repository URL for releases, `owner` or profile URL for a user’s or organization’s repositories, an optional `GITHUB_TOKEN` environment variable raises the rate limit and includes draft releases)
 - `github-gist` (GitHub username, public gists)
@@ -250,6 +254,9 @@ npx @11ty/import github 11ty
 # Import public gists for a user
 npx @11ty/import github-gist zachleat
 
+# Import commit history for files into their data files
+npx @11ty/import git . --path=src/docs/
+
 # Import posts and reels with media (requires INSTAGRAM_ACCESS_TOKEN)
 npx @11ty/import instagram zachleat
 
@@ -280,7 +287,7 @@ npx @11ty/import hobix redhanded.hobix.com --until=2009
 
 Comments are imported by default to a [template data file](https://www.11ty.dev/docs/data-template-dir/) next to each post (e.g. `my-post.md` and `my-post.json`) with a `comments` array. Each comment has `id`, `parentId` (`0` for top-level), `url`, `author` (`name`, `url`, `avatarUrl`), `date`, HTML `content`, and `via` (the source type).
 
-The data file can also have `likes`, `reposts`, `bookmarks`, and `rsvps` arrays, each item with `id`, `url`, `author`, `date`, and `via` (RSVPs also have `rsvp`: `yes`, `no`, `maybe`, or `interested`).
+The data file can also have `likes`, `reposts`, `bookmarks`, and `rsvps` arrays, each item with `id`, `url`, `author`, `date`, and `via` (RSVPs also have `rsvp`: `yes`, `no`, `maybe`, or `interested`), and a `commits` array from the [`git`](#git-history) source.
 
 Sources share the data file: a source only replaces its own items (matching `via`) and other keys are kept. Items are sorted by date.
 
@@ -332,6 +339,40 @@ npx @11ty/import webmentions example.com
 - Webmentions are always rewritten (no `--overwrite` needed), so mentions deleted upstream are removed.
 - Webmentions of a comment another source imported (e.g. replies backfed by Bridgy) are skipped.
 - Avatars are downloaded (see `--avatarrefs`).
+
+#### Git History
+
+Import the commit history of files into a `commits` array in the [template data file](https://www.11ty.dev/docs/data-template-dir/) next to each file, whether or not the file was imported.
+
+The route is picked automatically: a local checkout is read with `git log`, which is faster, has no rate limit, and follows renames. Otherwise the GitHub API is used, where an optional `GITHUB_TOKEN` environment variable raises the rate limit from 60 to 5,000 requests per hour.
+
+```sh
+# Authoring history for one file in this checkout
+npx @11ty/import git . --path=README.md
+
+# Multiple files in a checkout elsewhere
+npx @11ty/import git ~/Code/eleventy --path=README.md,src/Eleventy.js
+
+# `owner/repo` uses the local checkout when the current folder is one, otherwise the GitHub API
+npx @11ty/import git 11ty/eleventy --path=README.md
+
+# Every tracked file in a folder (the API route makes one request per file, so mind the rate limit)
+npx @11ty/import git . --path=src/docs/
+```
+
+- Each commit has `id` (the full SHA), `url`, `author`, `date`, `message` (the subject line only), and `via`. Author emails are not imported.
+- Data files go where the file lives in the repository: `--path=src/posts/one.md` writes `src/posts/one.json` (under `--output`). Paths are relative to the folder you target, or to the repository root for an `owner/repo` target.
+- The history is always rewritten (no `--overwrite` needed), so commits that are no longer reachable are removed. If one file fails, its data file is left alone and the other files merge instead of replacing.
+- `--until` limits the history to the commits at that point in time.
+
+Differences between the two routes:
+
+| | local checkout | GitHub API |
+| --- | --- | --- |
+| Renames | followed (`git log --follow`) | not followed, history stops at the last rename |
+| `author` | commit author `name` | GitHub `name` (login), `url`, and `avatarUrl`, falling back to the commit author’s name |
+| Commit `url` | from a GitHub `origin` remote, omitted without one | always |
+| Requires | the repository on disk | network, and the repository to be public (or a `GITHUB_TOKEN`) |
 
 ### Programmatic API
 

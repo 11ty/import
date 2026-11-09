@@ -18,6 +18,7 @@ import { FediverseUser } from "../src/DataSource/FediverseUser.js";
 import { Npm } from "../src/DataSource/Npm.js";
 import { GitHub } from "../src/DataSource/GitHub.js";
 import { GitHubGist } from "../src/DataSource/GitHubGist.js";
+import { GitHistory } from "../src/DataSource/GitHistory.js";
 import { Archive } from "../src/Archive.js";
 
 function cleanContent(content) {
@@ -4124,6 +4125,256 @@ test("GitHub targets", async (t) => {
 	assert.deepEqual(GitHub.parseTarget("11ty"), { owner: "11ty", repo: undefined });
 	assert.deepEqual(GitHub.parseTarget("https://github.com/ZachLeat"), { owner: "zachleat", repo: undefined });
 	assert.equal(GitHubGist.getUsername("https://gist.github.com/zachleat"), "zachleat");
+});
+
+
+function gitCommit(sha, date, message, { login = "zachleat" } = {}) {
+	return {
+		sha,
+		html_url: `https://github.com/11ty/eleventy/commit/${sha}`,
+		commit: {
+			message,
+			author: { name: "Zach Leatherman", email: "private@example.com", date },
+		},
+		author: login ? { login, html_url: `https://github.com/${login}`, avatar_url: `https://avatars.githubusercontent.com/${login}.png` } : null,
+	};
+}
+
+// `git log --format` output for the source’s record and field separators
+function gitLog(...records) {
+	return records.map(record => record.join(GitHistory.FIELD_SEPARATOR) + GitHistory.RECORD_SEPARATOR).join("");
+}
+
+// `runGit` responses keyed by subcommand, anything missing throws (as git does)
+function stubGit(source, responses = {}) {
+	source.runGit = async (args) => {
+		let response = responses[args[0]];
+		if(response === undefined) {
+			throw new Error(`stub git: not a git repository (${args.join(" ")})`);
+		}
+		source.gitCalls = [...(source.gitCalls || []), args];
+		return typeof response === "function" ? response(args) : response;
+	};
+}
+
+function getGitHistoryImporter(target, paths, overrides, outputFolder) {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(!outputFolder);
+	if(outputFolder) {
+		importer.setOutputFolder(outputFolder);
+	}
+	importer.setAssetReferenceType("disabled");
+	importer.addSource("git", { url: target, path: paths });
+
+	let [source] = importer.getSources();
+	// No local checkout, so the GitHub API route is used
+	stubGit(source);
+	for(let [url, data] of Object.entries(overrides || {})) {
+		source.setDataOverride(url.startsWith("https://") ? url : source.getCommitsUrl(url), data);
+	}
+	return importer;
+}
+
+test("Git history", async (t) => {
+	let importer = getGitHistoryImporter("11ty/eleventy", "README.md", {
+		"README.md": [
+			gitCommit("bbb", "2024-02-01T00:00:00Z", "Second commit\n\nWith a body"),
+			gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit", { login: false }),
+		],
+	});
+
+	let [entry] = await importer.getEntries();
+	assert.equal(entry.type, "git");
+	assert.equal(entry.url, "https://github.com/11ty/eleventy/blob/HEAD/README.md");
+	assert.equal(entry.filePath, "README.html");
+	assert.deepEqual(entry.date, new Date("2024-02-01T00:00:00Z"));
+	// Oldest first, no email, subject line only
+	assert.deepEqual(entry.commits, [
+		{ id: "aaa", url: "https://github.com/11ty/eleventy/commit/aaa", author: { name: "Zach Leatherman" }, date: new Date("2024-01-01T00:00:00Z"), message: "First commit" },
+		{ id: "bbb", url: "https://github.com/11ty/eleventy/commit/bbb", author: { name: "zachleat", url: "https://github.com/zachleat", avatarUrl: "https://avatars.githubusercontent.com/zachleat.png" }, date: new Date("2024-02-01T00:00:00Z"), message: "Second commit" },
+	]);
+	assert.equal(importer.getCounts().errors, 0);
+});
+
+test("Git history writes a data file next to the post, no post", async (t) => {
+	let dir = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-git-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+	let importer = getGitHistoryImporter("11ty/eleventy", "src/posts/one.md", {
+		"src/posts/one.md": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
+	}, dir);
+	await importer.toFiles(await importer.getEntries());
+
+	assert.deepEqual(fs.readdirSync(path.join(dir, "src/posts")), ["one.json"]);
+	let data = JSON.parse(fs.readFileSync(path.join(dir, "src/posts/one.json"), "utf8"));
+	assert.deepEqual(data.commits.map(({ id, via }) => [id, via]), [["aaa", "git"]]);
+});
+
+test("Git history folder paths list the repository tree", async (t) => {
+	let importer = getGitHistoryImporter("11ty/eleventy", "src/posts/,README.md", {
+		"https://api.github.com/repos/11ty/eleventy/git/trees/HEAD?recursive=1": {
+			tree: [
+				{ path: "src/posts", type: "tree" },
+				{ path: "src/posts/one.md", type: "blob" },
+				{ path: "src/posts/two.md", type: "blob" },
+				{ path: "src/other.md", type: "blob" },
+			],
+		},
+		"src/posts/one.md": [gitCommit("aaa", "2024-01-01T00:00:00Z", "One")],
+		"src/posts/two.md": [gitCommit("bbb", "2024-01-02T00:00:00Z", "Two")],
+		"README.md": [],
+	});
+
+	let entries = await importer.getEntries();
+	// Empty histories are skipped
+	assert.deepEqual(entries.map(entry => entry.filePath).sort(), ["src/posts/one.html", "src/posts/two.html"]);
+});
+
+test("Git history keeps other paths when one request fails", async (t) => {
+	let importer = getGitHistoryImporter("11ty/eleventy", "one.md,two.md", {
+		"one.md": new Error("Bad Request"),
+		"two.md": [gitCommit("bbb", "2024-01-02T00:00:00Z", "Two")],
+	});
+
+	let entries = await importer.getEntries();
+	assert.deepEqual(entries.map(entry => entry.filePath), ["two.html"]);
+	assert.equal(importer.isIncomplete(), true);
+	// Incomplete imports merge into existing data files instead of replacing them
+	let [source] = importer.getSources();
+	assert.equal(source.isIncomplete(), true);
+});
+
+test("Git history reads a local checkout", async (t) => {
+	let source = new GitHistory("./my-checkout");
+	source.setVerbose(false);
+	source.setPaths("src/posts/one.md");
+	stubGit(source, {
+		"rev-parse": "/tmp/my-checkout\n",
+		remote: "git@github.com:11ty/Eleventy.git\n",
+		log: gitLog(
+			["bbb", "Zach Leatherman", "2024-02-01T00:00:00-06:00", "Rename and edit"],
+			["aaa", "Someone Else", "2024-01-01T00:00:00Z", "Add the original file"],
+		),
+	});
+
+	let [entry] = await source.getEntries();
+	assert.equal(await source.getRoute(), "local");
+	// `origin` supplies the links
+	assert.equal(entry.url, "https://github.com/11ty/eleventy/blob/HEAD/src/posts/one.md");
+	assert.deepEqual(entry.commits, [
+		{ id: "aaa", url: "https://github.com/11ty/eleventy/commit/aaa", author: { name: "Someone Else" }, date: new Date("2024-01-01T00:00:00Z"), message: "Add the original file" },
+		{ id: "bbb", url: "https://github.com/11ty/eleventy/commit/bbb", author: { name: "Zach Leatherman" }, date: new Date("2024-02-01T06:00:00Z"), message: "Rename and edit" },
+	]);
+	// Renames are followed
+	assert.deepEqual(source.gitCalls.at(-1), ["log", "--follow", `--format=${GitHistory.getLogFormat()}`, "--", "src/posts/one.md"]);
+});
+
+test("Git history local checkout without a GitHub remote has no links", async (t) => {
+	let source = new GitHistory("/tmp/my-checkout");
+	source.setVerbose(false);
+	source.setPaths("one.md");
+	stubGit(source, {
+		"rev-parse": "/tmp/my-checkout\n",
+		remote: "git@git.example.com:owner/repo.git\n",
+		log: gitLog(["aaa", "Zach Leatherman", "2024-01-01T00:00:00Z", "First commit"]),
+	});
+
+	let [entry] = await source.getEntries();
+	assert.equal(entry.url, undefined);
+	assert.deepEqual(entry.commits, [{ id: "aaa", author: { name: "Zach Leatherman" }, date: new Date("2024-01-01T00:00:00Z"), message: "First commit" }]);
+});
+
+test("Git history local folder paths use git ls-files", async (t) => {
+	let source = new GitHistory("/tmp/my-checkout");
+	source.setVerbose(false);
+	source.setPaths("src/posts/");
+	stubGit(source, {
+		"rev-parse": "/tmp/my-checkout\n",
+		remote: "",
+		"ls-files": "src/posts/one.md\0src/posts/two.md\0",
+		log: args => gitLog(["aaa", "Zach Leatherman", "2024-01-01T00:00:00Z", `Commit for ${args.at(-1)}`]),
+	});
+
+	let entries = await source.getEntries();
+	assert.deepEqual(entries.map(entry => entry.commits[0].message), ["Commit for src/posts/one.md", "Commit for src/posts/two.md"]);
+});
+
+test("Git history prefers a local checkout of an owner/repo target", async (t) => {
+	let source = new GitHistory("11ty/eleventy");
+	source.setVerbose(false);
+	source.setPaths("README.md");
+	stubGit(source, {
+		"rev-parse": "/tmp/eleventy\n",
+		remote: "https://github.com/11ty/eleventy\n",
+		log: gitLog(["aaa", "Zach Leatherman", "2024-01-01T00:00:00Z", "First commit"]),
+	});
+
+	let [entry] = await source.getEntries();
+	assert.equal(await source.getRoute(), "local");
+	// The repository root, not the folder the command ran in
+	assert.equal(source.dir, "/tmp/eleventy");
+	assert.equal(entry.commits.length, 1);
+});
+
+test("Git history falls back to the API for a different local checkout", async (t) => {
+	let source = new GitHistory("11ty/eleventy");
+	source.setVerbose(false);
+	stubGit(source, {
+		"rev-parse": "/tmp/other\n",
+		remote: "https://github.com/11ty/import\n",
+	});
+
+	assert.equal(await source.getRoute(), "api");
+});
+
+test("Git history requires a local target to be a repository", async (t) => {
+	let source = new GitHistory("./not-a-repo");
+	stubGit(source);
+	await assert.rejects(source.getRoute(), /requires a git repository, \.\/not-a-repo is not one/);
+});
+
+test("Git history targets and paths", async (t) => {
+	assert.throws(() => new GitHistory(), /requires an `owner\/repo` repository/);
+	assert.throws(() => new GitHistory("11ty"), /requires an `owner\/repo` repository/);
+
+	let source = new GitHistory("https://github.com/11ty/Eleventy.git");
+	assert.equal(source.repository, "11ty/eleventy");
+	assert.equal(source.dir, undefined);
+
+	// Local targets
+	assert.equal(new GitHistory("./repo").dir, "./repo");
+	assert.equal(new GitHistory("/tmp/repo").dir, "/tmp/repo");
+	assert.equal(new GitHistory("~/repo").dir, path.join(os.homedir(), "/repo"));
+	assert.equal(new GitHistory(".").dir, ".");
+	assert.equal(new GitHistory("test").dir, "test");
+
+	source.setPaths(" /one.md , two.md ,,one.md ");
+	assert.deepEqual(source.getPaths(), ["one.md", "two.md"]);
+
+	await assert.rejects(new GitHistory("11ty/eleventy").getEntries(), /requires at least one file path/);
+});
+
+test("Git history GitHub remotes", async (t) => {
+	assert.equal(GitHistory.getRemoteRepository("git@github.com:11ty/Eleventy.git"), "11ty/eleventy");
+	assert.equal(GitHistory.getRemoteRepository("https://github.com/11ty/eleventy.git"), "11ty/eleventy");
+	assert.equal(GitHistory.getRemoteRepository("ssh://git@github.com/11ty/eleventy"), "11ty/eleventy");
+	assert.equal(GitHistory.getRemoteRepository("git@gitlab.com:11ty/eleventy.git"), undefined);
+	assert.equal(GitHistory.getRemoteRepository("https://example.com/11ty/eleventy"), undefined);
+	assert.equal(GitHistory.getRemoteRepository(""), undefined);
+});
+
+test("Git history log parsing", async (t) => {
+	// Subjects with newlines and separators in the message body don’t break records
+	assert.deepEqual(GitHistory.parseLog(gitLog(["aaa", "Zach", "2024-01-01T00:00:00Z", "One"])), [
+		{ sha: "aaa", commit: { message: "One", author: { name: "Zach", date: "2024-01-01T00:00:00Z" } } },
+	]);
+	assert.deepEqual(GitHistory.parseLog(""), []);
+	assert.deepEqual(GitHistory.parseLog("\n"), []);
+});
+
+test("Git history path option is only for sources that support it", async (t) => {
+	assert.throws(() => new Importer().addSource("github", { url: "11ty/eleventy", path: "README.md" }), /The path option is not supported by the github source type/);
 });
 
 async function importPostTo(dir, content, { overwrite = false } = {}) {
