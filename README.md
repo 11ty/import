@@ -356,14 +356,14 @@ npx @11ty/import git ~/Code/eleventy --path=README.md,src/Eleventy.js
 # `owner/repo` uses the local checkout when the current folder is one, otherwise the GitHub API
 npx @11ty/import git 11ty/eleventy --path=README.md
 
-# Every tracked file in a folder (the API route makes one request per file, so mind the rate limit)
+# Every tracked file in a folder (the API route makes one request per 100 commits per file, so mind the rate limit)
 npx @11ty/import git . --path=src/docs/
 ```
 
 - Each commit has `id` (the full SHA), `url`, `author`, `date`, `message` (the subject line only), and `via`. Author emails are not imported.
 - Data files go where the file lives in the repository: `--path=src/posts/one.md` writes `src/posts/one.json` (under `--output`). Paths are relative to the folder you target (on both routes), or to the repository root for an `owner/repo` target.
-- Only the 10 newest commits are kept per file. Use the `commits` source option to change this (`0` keeps the full history), e.g. `importer.addSource("git", { url: ".", path: "README.md", commits: 25 })`.
-- An `authors` array lists each commit author once. New authors are appended on every import and are never removed, so it keeps authors whose commits have dropped out of `commits`.
+- Only the 10 newest commits are kept in `commits`. Use the `commits` source option to change this (`0` keeps the full history), e.g. `importer.addSource("git", { url: ".", path: "README.md", commits: 25 })`. The full history is still read, so the API route makes one request per 100 commits per file.
+- An `authors` array lists each author from the file’s full history (up to `--until`) once, oldest first. New authors are appended on every import and are never removed.
 - The history is always rewritten (no `--overwrite` needed), so commits that are no longer reachable are removed. If one file fails, its data file is left alone and the other files merge instead of replacing.
 - `--until` limits the history to the commits at that point in time.
 

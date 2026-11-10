@@ -55,10 +55,6 @@ class DataSource {
 		return timestamp;
 	}
 
-	getUntil() {
-		return this.#until;
-	}
-
 	static parseUntil(until) {
 		let timestamp = String(until).replace(/[-:T\s]/g, "");
 		let [year, month = 1, day = 1, hours = 0, minutes = 0, seconds = 0] = timestamp.match(/^\d{4}|\d{2}/g)?.map(Number) || [];

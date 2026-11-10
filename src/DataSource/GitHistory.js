@@ -138,15 +138,6 @@ export class GitHistory extends DataSource {
 		return this.#commitLimit;
 	}
 
-	// `until` filters after fetching, so it needs the full history
-	#getFetchLimit() {
-		return this.getUntil() ? Infinity : this.#commitLimit;
-	}
-
-	#getPerPage() {
-		return Math.min(GitHistory.PER_PAGE, this.#getFetchLimit());
-	}
-
 	// Skips automatic route selection
 	setRoute(route) {
 		if(!GitHistory.ROUTES.includes(route)) {
@@ -260,7 +251,7 @@ export class GitHistory extends DataSource {
 		if(this.#branch) {
 			url.searchParams.set("sha", this.#branch);
 		}
-		url.searchParams.set("per_page", this.#getPerPage());
+		url.searchParams.set("per_page", GitHistory.PER_PAGE);
 		url.searchParams.set("page", pageNumber);
 		return url.toString();
 	}
@@ -303,9 +294,7 @@ export class GitHistory extends DataSource {
 
 	// `--follow` continues the history through renames (one path at a time only)
 	async #getLocalCommits(filePath) {
-		let limit = this.#getFetchLimit();
-		let count = Number.isFinite(limit) ? [`--max-count=${limit}`] : [];
-		return GitHistory.parseLog(await this.runGit(["log", "--follow", ...count, `--format=${GitHistory.getLogFormat()}`, "--", filePath]));
+		return GitHistory.parseLog(await this.runGit(["log", "--follow", `--format=${GitHistory.getLogFormat()}`, "--", filePath]));
 	}
 
 	async #getApiCommits(filePath) {
@@ -318,7 +307,7 @@ export class GitHistory extends DataSource {
 
 			commits.push(...results);
 
-			if(results.length < this.#getPerPage() || commits.length >= this.#getFetchLimit()) {
+			if(results.length < GitHistory.PER_PAGE) {
 				break;
 			}
 		}
@@ -389,12 +378,12 @@ export class GitHistory extends DataSource {
 
 	cleanEntry({ path: filePath, commits }) {
 		// `until` limits the history to the commits at that point in time
-		let cleaned = commits.map(commit => this.cleanCommit(commit)).filter(commit => !this.isAfterUntil(commit.date)).sort((a, b) => a.date - b.date).slice(-this.#commitLimit);
+		let cleaned = commits.map(commit => this.cleanCommit(commit)).filter(commit => !this.isAfterUntil(commit.date)).sort((a, b) => a.date - b.date);
 		if(!cleaned.length) {
 			return;
 		}
 
-		// The importer appends these to the data file’s `authors` (never removed), oldest first
+		// From the full history (the limit only trims `commits`), the importer appends these to the data file’s `authors`
 		let authors = new Map();
 		for(let { author } of cleaned) {
 			if(author) {
@@ -409,7 +398,7 @@ export class GitHistory extends DataSource {
 			filePathSlug: filePath.replace(/\.[^./]+$/, ""),
 			date: cleaned.at(-1).date,
 			content: "",
-			commits: cleaned,
+			commits: cleaned.slice(-this.#commitLimit),
 			authors: Array.from(authors.values()),
 		};
 
