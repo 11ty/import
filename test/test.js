@@ -2644,12 +2644,15 @@ test("Substack", async (t) => {
 	importer.addSource("substack", "example");
 
 	let archivePost = (id, slug, extra = {}) => ({ id, slug, post_date: "2026-10-01T12:00:00.000Z", comment_count: 0, ...extra });
-	importer.addDataOverride("substack", "https://example.substack.com/api/v1/archive?sort=new&offset=0&limit=25", [
-		archivePost(1, "first", { comment_count: 2 }),
-		archivePost(2, "paid"),
-	]);
-	// Shorter pages are offset by the number of posts returned
-	importer.addDataOverride("substack", "https://example.substack.com/api/v1/archive?sort=new&offset=2&limit=25", []);
+	importer.addDataOverride("substack", "https://example.substack.com/api/v1/archive?sort=new&limit=25", {
+		posts: [
+			archivePost(1, "first", { comment_count: 2 }),
+			archivePost(2, "paid"),
+		],
+		nextCursor: "eyJwb3N0X2RhdGUiOiIyMDI2LTEwLTAxVDEyOjAwOjAwLjAwMFoifQ==",
+	});
+	// The last page reports a null cursor
+	importer.addDataOverride("substack", "https://example.substack.com/api/v1/archive?sort=new&limit=25&cursor=eyJwb3N0X2RhdGUiOiIyMDI2LTEwLTAxVDEyOjAwOjAwLjAwMFoifQ%3D%3D", { posts: [], nextCursor: null });
 
 	importer.addDataOverride("substack", "https://example.substack.com/api/v1/posts/first", {
 		id: 1,

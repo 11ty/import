@@ -9,7 +9,7 @@ export class Substack extends DataSource {
 	static SUPPORTS_COMMENTS = true;
 	static SUPPORTS_COUNTS = true;
 
-	#offset = 0;
+	#nextCursor;
 	#commentCounts = new Map();
 
 	// Publication URL (custom domains too) or a `*.substack.com` subdomain name
@@ -36,20 +36,35 @@ export class Substack extends DataSource {
 		return {};
 	}
 
-	// Paged by offset (pages can be shorter than the requested limit)
+	#getArchiveUrl(cursor) {
+		let url = new URL(`${this.getSiteUrl()}/api/v1/archive`);
+		url.searchParams.set("sort", "new");
+		url.searchParams.set("limit", Substack.PER_PAGE);
+		if(cursor) {
+			url.searchParams.set("cursor", cursor);
+		}
+		return url.toString();
+	}
+
+	// Paged by an opaque `cursor` (the archive rejects `offset` with a 400), `nextCursor` is null on the last page
 	getUrl() {
 		return (pageNumber = 1) => {
 			if(pageNumber === 1) {
-				this.#offset = 0;
+				this.#nextCursor = undefined;
+				return this.#getArchiveUrl();
 			}
-			return `${this.getSiteUrl()}/api/v1/archive?sort=new&offset=${this.#offset}&limit=${Substack.PER_PAGE}`;
+
+			if(this.#nextCursor) {
+				return this.#getArchiveUrl(this.#nextCursor);
+			}
+
+			return false;
 		};
 	}
 
 	getEntriesFromData(data) {
-		let posts = Array.isArray(data) ? data : [];
-		this.#offset += posts.length;
-		return posts;
+		this.#nextCursor = data?.nextCursor || undefined;
+		return Array.isArray(data?.posts) ? data.posts : [];
 	}
 
 	getUniqueIdFromEntry(entry) {
