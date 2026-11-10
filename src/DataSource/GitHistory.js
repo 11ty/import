@@ -30,6 +30,8 @@ export class GitHistory extends DataSource {
 	#route;
 	#requestedRoute;
 	#remoteRepository;
+	// The folder target’s position in the repository (e.g. `docs/`), API paths and links are relative to the repository root
+	#repositoryPrefix = "";
 
 	constructor(target) {
 		super();
@@ -166,6 +168,7 @@ export class GitHistory extends DataSource {
 				throw new Error(`Git history requires a git repository, ${this.dir} is not one.`);
 			}
 			this.#remoteRepository = await this.getOriginRepository(this.dir);
+			this.#repositoryPrefix = (await this.runGit(["rev-parse", "--show-prefix"])).trim();
 			if(this.#requestedRoute === "api") {
 				if(!this.#remoteRepository) {
 					throw new Error(`The api route requires a GitHub \`origin\` remote, ${this.dir} has none.`);
@@ -195,9 +198,13 @@ export class GitHistory extends DataSource {
 		return this.#route = "api";
 	}
 
+	getRepositoryPath(filePath) {
+		return this.#repositoryPrefix + filePath;
+	}
+
 	getCommitsUrl(filePath, pageNumber = 1) {
 		let url = new URL(`${GitHub.API}/repos/${this.repository}/commits`);
-		url.searchParams.set("path", filePath);
+		url.searchParams.set("path", this.getRepositoryPath(filePath));
 		url.searchParams.set("per_page", GitHistory.PER_PAGE);
 		url.searchParams.set("page", pageNumber);
 		return url.toString();
@@ -231,7 +238,8 @@ export class GitHistory extends DataSource {
 			if(data?.truncated && this.isVerbose) {
 				Logger.warning(`GitHub truncated the file list for ${this.repository}, some files in the requested folders are missing.`);
 			}
-			tracked = (data?.tree || []).filter(node => node.type === "blob").map(node => node.path);
+			let prefix = this.#repositoryPrefix;
+			tracked = (data?.tree || []).filter(node => node.type === "blob" && node.path.startsWith(prefix)).map(node => node.path.slice(prefix.length));
 		}
 
 		return Array.from(new Set(this.#paths.flatMap(filePath => {
@@ -341,7 +349,7 @@ export class GitHistory extends DataSource {
 		};
 
 		if(this.repository) {
-			entry.url = `${GitHub.WEBSITE}/${this.repository}/blob/HEAD/${filePath.split("/").map(encodeURIComponent).join("/")}`;
+			entry.url = `${GitHub.WEBSITE}/${this.repository}/blob/HEAD/${this.getRepositoryPath(filePath).split("/").map(encodeURIComponent).join("/")}`;
 		}
 
 		return entry;

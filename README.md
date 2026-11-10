@@ -370,7 +370,7 @@ npx @11ty/import git . --path=src/docs/
 ```
 
 - Each commit has `id` (the full SHA), `url`, `author`, `date`, `message` (the subject line only), and `via`. Author emails are not imported.
-- Data files go where the file lives in the repository: `--path=src/posts/one.md` writes `src/posts/one.json` (under `--output`). Paths are relative to the folder you target, or to the repository root for an `owner/repo` target.
+- Data files go where the file lives in the repository: `--path=src/posts/one.md` writes `src/posts/one.json` (under `--output`). Paths are relative to the folder you target (on both routes), or to the repository root for an `owner/repo` target.
 - The history is always rewritten (no `--overwrite` needed), so commits that are no longer reachable are removed. If one file fails, its data file is left alone and the other files merge instead of replacing.
 - `--until` limits the history to the commits at that point in time.
 

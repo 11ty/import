@@ -4357,7 +4357,7 @@ test("Git history reads a local checkout", async (t) => {
 	source.setVerbose(false);
 	source.setPaths("src/posts/one.md");
 	stubGit(source, {
-		"rev-parse": "/tmp/my-checkout\n",
+		"rev-parse": args => args[1] === "--show-prefix" ? "\n" : "/tmp/my-checkout\n",
 		remote: "git@github.com:11ty/Eleventy.git\n",
 		log: gitLog(
 			["bbb", "Zach Leatherman", "2024-02-01T00:00:00-06:00", "Rename and edit"],
@@ -4377,12 +4377,29 @@ test("Git history reads a local checkout", async (t) => {
 	assert.deepEqual(source.gitCalls.at(-1), ["log", "--follow", `--format=${GitHistory.getLogFormat()}`, "--", "src/posts/one.md"]);
 });
 
+test("Git history local checkout links a folder target in a subfolder", async (t) => {
+	let source = new GitHistory("/tmp/starters/docs");
+	source.setVerbose(false);
+	source.setPaths("content/index.md");
+	stubGit(source, {
+		"rev-parse": args => args[1] === "--show-prefix" ? "docs/\n" : "/tmp/starters\n",
+		remote: "https://github.com/11ty/starters\n",
+		log: gitLog(["aaa", "Zach Leatherman", "2024-01-01T00:00:00Z", "First commit"]),
+	});
+
+	let [entry] = await source.getEntries();
+	assert.equal(entry.url, "https://github.com/11ty/starters/blob/HEAD/docs/content/index.md");
+	assert.equal(entry.filePathSlug, "content/index");
+	// `git log` resolves paths against the target folder
+	assert.equal(source.gitCalls.at(-1).at(-1), "content/index.md");
+});
+
 test("Git history local checkout without a GitHub remote has no links", async (t) => {
 	let source = new GitHistory("/tmp/my-checkout");
 	source.setVerbose(false);
 	source.setPaths("one.md");
 	stubGit(source, {
-		"rev-parse": "/tmp/my-checkout\n",
+		"rev-parse": args => args[1] === "--show-prefix" ? "\n" : "/tmp/my-checkout\n",
 		remote: "git@git.example.com:owner/repo.git\n",
 		log: gitLog(["aaa", "Zach Leatherman", "2024-01-01T00:00:00Z", "First commit"]),
 	});
@@ -4397,7 +4414,7 @@ test("Git history local folder paths use git ls-files", async (t) => {
 	source.setVerbose(false);
 	source.setPaths("src/posts/");
 	stubGit(source, {
-		"rev-parse": "/tmp/my-checkout\n",
+		"rev-parse": args => args[1] === "--show-prefix" ? "\n" : "/tmp/my-checkout\n",
 		remote: "",
 		"ls-files": "src/posts/one.md\0src/posts/two.md\0",
 		log: args => gitLog(["aaa", "Zach Leatherman", "2024-01-01T00:00:00Z", `Commit for ${args.at(-1)}`]),
@@ -4437,7 +4454,7 @@ test("Git history falls back to the API for a different local checkout", async (
 
 test("Git history route option", async (t) => {
 	let checkout = {
-		"rev-parse": "/tmp/eleventy\n",
+		"rev-parse": args => args[1] === "--show-prefix" ? "\n" : "/tmp/eleventy\n",
 		remote: "https://github.com/11ty/eleventy\n",
 	};
 
@@ -4468,6 +4485,71 @@ test("Git history route option", async (t) => {
 
 	assert.throws(() => source.setRoute("ssh"), /route must be one of local, api/);
 	assert.throws(() => new Importer().addSource("github", { url: "11ty/eleventy", route: "api" }), /The route option is not supported by the github source type/);
+});
+
+// A folder target at `docs/` in a checkout of 11ty/starters, read through the API
+function getGitHistorySubfolderImporter(paths, overrides, { prefix = "docs/", outputFolder } = {}) {
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(!outputFolder);
+	if(outputFolder) {
+		importer.setOutputFolder(outputFolder);
+	}
+	importer.setAssetReferenceType("disabled");
+	importer.addSource("git", { url: "/tmp/starters/docs", path: paths, route: "api" });
+
+	let [source] = importer.getSources();
+	stubGit(source, {
+		"rev-parse": args => args[1] === "--show-prefix" ? `${prefix}\n` : "/tmp/starters\n",
+		remote: "https://github.com/11ty/starters\n",
+	});
+	for(let [url, data] of Object.entries(overrides)) {
+		source.setDataOverride(url, data);
+	}
+	return importer;
+}
+
+test("Git history api route on a folder target in a subfolder", async (t) => {
+	let dir = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-git-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+	let importer = getGitHistorySubfolderImporter("content/index.md", {
+		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Findex.md&per_page=100&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
+	}, { outputFolder: dir });
+
+	let entries = await importer.getEntries();
+	let [entry] = entries;
+	assert.equal(entry.url, "https://github.com/11ty/starters/blob/HEAD/docs/content/index.md");
+	assert.equal(entry.uuid, "11ty/import::git::11ty/starters::content/index.md");
+
+	await importer.toFiles(entries);
+	assert.deepEqual(fs.readdirSync(path.join(dir, "content")), ["index.json"]);
+});
+
+test("Git history api route folder paths in a subfolder", async (t) => {
+	let importer = getGitHistorySubfolderImporter("content/", {
+		"https://api.github.com/repos/11ty/starters/git/trees/HEAD?recursive=1": {
+			tree: [
+				{ path: "content/root.md", type: "blob" },
+				{ path: "docs/content/one.md", type: "blob" },
+				{ path: "docs/other.md", type: "blob" },
+			],
+		},
+		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Fone.md&per_page=100&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "One")],
+	});
+
+	let entries = await importer.getEntries();
+	assert.deepEqual(entries.map(entry => entry.filePath), ["content/one.html"]);
+});
+
+test("Git history api route on a folder target at the repository root", async (t) => {
+	let importer = getGitHistorySubfolderImporter("content/index.md", {
+		"https://api.github.com/repos/11ty/starters/commits?path=content%2Findex.md&per_page=100&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
+	}, { prefix: "" });
+
+	let [entry] = await importer.getEntries();
+	assert.equal(entry.url, "https://github.com/11ty/starters/blob/HEAD/content/index.md");
+	assert.equal(entry.filePath, "content/index.html");
 });
 
 test("Git history requires a local target to be a repository", async (t) => {
