@@ -100,7 +100,7 @@ npx @11ty/import git . --path=README.md,src/Eleventy.js
 - `fediverse` (username)
 - `jsonfeed` (URL)
 - `rss` (URL)
-- `wordpress` (blog home page URL, discovers the site’s own REST API or falls back to the WordPress.com API, then to the site’s paged RSS feed for posts only, `--route=api`, `wordpressdotcom`, or `rss` skips discovery)
+- `wordpress` (blog home page URL, discovers the site’s own REST API or falls back to the WordPress.com API, then to the site’s paged RSS feed for posts only, the `route` source option, `api`, `wordpressdotcom`, or `rss`, skips discovery)
 - `wordpressxml` (WordPress export file path or URL)
 - `youtubeuser` (user id)
 
@@ -125,9 +125,6 @@ npx @11ty/import wordpress https://blog.fontawesome.com --posttypes=posts,pages,
 # WordPress.com sites (including custom domains) work the same way
 # Draft posts available when a WORDPRESSDOTCOM_TOKEN (OAuth2 access token) environment variable is supplied
 npx @11ty/import wordpress https://en.blog.wordpress.com
-
-# Skip discovery and use one route: the site’s own REST API (api), the WordPress.com API (wordpressdotcom), or the paged RSS feed (rss)
-npx @11ty/import wordpress https://blog.fontawesome.com --route=rss
 
 # Import published and draft posts and pages from a WordPress export file (Tools → Export)
 npx @11ty/import wordpressxml ./example.WordPress.2024-01-01.xml --posttypes=posts,pages,product
@@ -350,7 +347,7 @@ npx @11ty/import webmentions example.com
 
 Import the commit history of files into a `commits` array in the [template data file](https://www.11ty.dev/docs/data-template-dir/) next to each file, whether or not the file was imported.
 
-The route is picked automatically: a local checkout is read with `git log`, which is faster, has no rate limit, and follows renames. Otherwise the GitHub API is used, where an optional `GITHUB_TOKEN` environment variable raises the rate limit from 60 to 5,000 requests per hour. Use `--route=api` or `--route=local` to choose one (`api` on a folder target uses its GitHub `origin` remote and reads the branch it tracks there, otherwise the default branch).
+The route is picked automatically: a local checkout is read with `git log`, which is faster, has no rate limit, and follows renames. Otherwise the GitHub API is used, where an optional `GITHUB_TOKEN` environment variable raises the rate limit from 60 to 5,000 requests per hour. Use the `route` source option, `api` or `local`, to choose one (`api` on a folder target uses its GitHub `origin` remote and reads the branch it tracks there, otherwise the default branch).
 
 ```sh
 # Authoring history for one file in this checkout
@@ -361,9 +358,6 @@ npx @11ty/import git ~/Code/eleventy --path=README.md,src/Eleventy.js
 
 # `owner/repo` uses the local checkout when the current folder is one, otherwise the GitHub API
 npx @11ty/import git 11ty/eleventy --path=README.md
-
-# Always use the GitHub API, even from a local checkout
-npx @11ty/import git 11ty/eleventy --path=README.md --route=api
 
 # Every tracked file in a folder (the API route makes one request per file, so mind the rate limit)
 npx @11ty/import git . --path=src/docs/

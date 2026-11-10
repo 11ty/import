@@ -98,15 +98,11 @@ let { positionals, values } = parseArgs({
 			type: "string",
 			default: "",
 		},
-		route: {
-			type: "string",
-			default: "",
-		},
 	},
 });
 
 let [ type, target ] = positionals;
-let { quiet, dryrun, output, help, version, overwrite, prune, cacheduration, format, assetrefs, avatarrefs, assetmaxsize, within, preserve, posttypes, path, limit, until, contentselector, route } = values;
+let { quiet, dryrun, output, help, version, overwrite, prune, cacheduration, format, assetrefs, avatarrefs, assetmaxsize, within, preserve, posttypes, path, limit, until, contentselector } = values;
 
 if(version) {
 	const require = createRequire(import.meta.url);
@@ -165,9 +161,6 @@ if(help) {
   npx @11ty/import wordpress [target] --posttypes=posts,pages,product
   npx @11ty/import wordpressxml [file] --posttypes=posts,pages,product
 
-  # WordPress route, skips discovery: api (the site’s own REST API), wordpressdotcom, rss
-  npx @11ty/import wordpress [target] --route=rss
-
   # Import git commit history for files, one data file per file
   # Reads a local checkout when there is one, otherwise the GitHub API (optional GITHUB_TOKEN)
   npx @11ty/import git . --path=README.md
@@ -176,9 +169,6 @@ if(help) {
 
   # A trailing slash imports every file in a folder
   npx @11ty/import git 11ty/11ty-website --path=src/blog/
-
-  # Skip the local checkout and use the GitHub API (or require a checkout with local)
-  npx @11ty/import git 11ty/eleventy --path=README.md --route=api
 
   # Only the newest entries (stops fetching once reached)
   npx @11ty/import [type] [target] --limit=5
@@ -247,14 +237,13 @@ importer.setSafeMode(!overwrite);
 importer.setDryRun(dryrun);
 importer.setPruneAssets(prune);
 try {
-	importer.addSource(type, posttypes || path || limit || until || contentselector || route ? {
+	importer.addSource(type, posttypes || path || limit || until || contentselector ? {
 		url: target,
 		postTypes: posttypes || undefined,
 		path: path || undefined,
 		limit: limit || undefined,
 		until: until || undefined,
 		contentSelector: contentselector || undefined,
-		route: route || undefined,
 	} : target);
 } catch(e) {
 	console.error(e.message);
