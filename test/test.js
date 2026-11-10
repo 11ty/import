@@ -4488,7 +4488,7 @@ test("Git history route option", async (t) => {
 });
 
 // A folder target at `docs/` in a checkout of 11ty/starters, read through the API
-function getGitHistorySubfolderImporter(paths, overrides, { prefix = "docs/", outputFolder } = {}) {
+function getGitHistorySubfolderImporter(paths, overrides, { prefix = "docs/", upstream, outputFolder } = {}) {
 	let importer = new Importer();
 	importer.setVerbose(false);
 	importer.setDryRun(!outputFolder);
@@ -4500,7 +4500,18 @@ function getGitHistorySubfolderImporter(paths, overrides, { prefix = "docs/", ou
 
 	let [source] = importer.getSources();
 	stubGit(source, {
-		"rev-parse": args => args[1] === "--show-prefix" ? `${prefix}\n` : "/tmp/starters\n",
+		"rev-parse": args => {
+			if(args[1] === "--show-prefix") {
+				return `${prefix}\n`;
+			}
+			if(args[1] === "--abbrev-ref") {
+				if(!upstream) {
+					throw new Error("fatal: no upstream configured for branch");
+				}
+				return `${upstream}\n`;
+			}
+			return "/tmp/starters\n";
+		},
 		remote: "https://github.com/11ty/starters\n",
 	});
 	for(let [url, data] of Object.entries(overrides)) {
@@ -4550,6 +4561,30 @@ test("Git history api route on a folder target at the repository root", async (t
 	let [entry] = await importer.getEntries();
 	assert.equal(entry.url, "https://github.com/11ty/starters/blob/HEAD/content/index.md");
 	assert.equal(entry.filePath, "content/index.html");
+});
+
+test("Git history api route on a folder target reads its upstream branch", async (t) => {
+	let importer = getGitHistorySubfolderImporter("content/", {
+		"https://api.github.com/repos/11ty/starters/git/trees/lm%2Fdocs-starter?recursive=1": {
+			tree: [{ path: "docs/content/index.md", type: "blob" }],
+		},
+		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Findex.md&sha=lm%2Fdocs-starter&per_page=100&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
+	}, { upstream: "origin/lm/docs-starter" });
+
+	let [entry] = await importer.getEntries();
+	assert.equal(entry.url, "https://github.com/11ty/starters/blob/lm%2Fdocs-starter/docs/content/index.md");
+});
+
+test("Git history api route ignores an upstream on another remote", async (t) => {
+	let importer = getGitHistorySubfolderImporter("content/", {
+		"https://api.github.com/repos/11ty/starters/git/trees/HEAD?recursive=1": {
+			tree: [{ path: "docs/content/index.md", type: "blob" }],
+		},
+		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Findex.md&per_page=100&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
+	}, { upstream: "fork/lm/docs-starter" });
+
+	let [entry] = await importer.getEntries();
+	assert.equal(entry.url, "https://github.com/11ty/starters/blob/HEAD/docs/content/index.md");
 });
 
 test("Git history requires a local target to be a repository", async (t) => {

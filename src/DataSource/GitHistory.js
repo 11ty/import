@@ -32,6 +32,8 @@ export class GitHistory extends DataSource {
 	#remoteRepository;
 	// The folder target’s position in the repository (e.g. `docs/`), API paths and links are relative to the repository root
 	#repositoryPrefix = "";
+	// The branch a folder target tracks on GitHub (api route only), otherwise the default branch
+	#branch;
 
 	constructor(target) {
 		super();
@@ -156,6 +158,25 @@ export class GitHistory extends DataSource {
 		} catch(e) {}
 	}
 
+	// The `origin` branch the checkout tracks, nothing for a detached HEAD, an unpushed branch, or another remote
+	async getUpstreamBranch() {
+		try {
+			let upstream = (await this.runGit(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])).trim();
+			if(upstream.startsWith("origin/")) {
+				return upstream.slice("origin/".length) || undefined;
+			}
+		} catch(e) {}
+	}
+
+	// `HEAD` is the repository’s default branch
+	get ref() {
+		return this.#branch || "HEAD";
+	}
+
+	get branchName() {
+		return this.#branch || "the default branch";
+	}
+
 	// `local` or `api`: a local checkout avoids the API’s rate limit and follows renames, so it wins when there is one
 	async getRoute() {
 		if(this.#route) {
@@ -172,6 +193,10 @@ export class GitHistory extends DataSource {
 			if(this.#requestedRoute === "api") {
 				if(!this.#remoteRepository) {
 					throw new Error(`The api route requires a GitHub \`origin\` remote, ${this.dir} has none.`);
+				}
+				this.#branch = await this.getUpstreamBranch();
+				if(this.isVerbose) {
+					Logger.log(`Reading ${this.repository} git history from ${this.branchName} through the GitHub API`);
 				}
 				return this.#route = "api";
 			}
@@ -205,6 +230,9 @@ export class GitHistory extends DataSource {
 	getCommitsUrl(filePath, pageNumber = 1) {
 		let url = new URL(`${GitHub.API}/repos/${this.repository}/commits`);
 		url.searchParams.set("path", this.getRepositoryPath(filePath));
+		if(this.#branch) {
+			url.searchParams.set("sha", this.#branch);
+		}
 		url.searchParams.set("per_page", GitHistory.PER_PAGE);
 		url.searchParams.set("page", pageNumber);
 		return url.toString();
@@ -233,8 +261,7 @@ export class GitHistory extends DataSource {
 		if(await this.getRoute() === "local") {
 			tracked = (await this.runGit(["ls-files", "-z", "--", ...folders])).split("\0").filter(Boolean);
 		} else {
-			// `HEAD` is the repository’s default branch
-			let data = await this.getData(`${GitHub.API}/repos/${this.repository}/git/trees/HEAD?recursive=1`, "json", true);
+			let data = await this.getData(`${GitHub.API}/repos/${this.repository}/git/trees/${encodeURIComponent(this.ref)}?recursive=1`, "json", true);
 			if(data?.truncated && this.isVerbose) {
 				Logger.warning(`GitHub truncated the file list for ${this.repository}, some files in the requested folders are missing.`);
 			}
@@ -349,7 +376,7 @@ export class GitHistory extends DataSource {
 		};
 
 		if(this.repository) {
-			entry.url = `${GitHub.WEBSITE}/${this.repository}/blob/HEAD/${this.getRepositoryPath(filePath).split("/").map(encodeURIComponent).join("/")}`;
+			entry.url = `${GitHub.WEBSITE}/${this.repository}/blob/${encodeURIComponent(this.ref)}/${this.getRepositoryPath(filePath).split("/").map(encodeURIComponent).join("/")}`;
 		}
 
 		return entry;
@@ -363,6 +390,9 @@ export class GitHistory extends DataSource {
 		let entries = [];
 		for(let filePath of await this.#resolvePaths()) {
 			let commits = await this.#getCommits(filePath);
+			if(commits?.length === 0 && this.isVerbose && await this.getRoute() === "api") {
+				Logger.warning(`No commits for ${this.getRepositoryPath(filePath)} on ${this.branchName} of ${this.repository}.`);
+			}
 			if(!commits?.length) {
 				continue;
 			}

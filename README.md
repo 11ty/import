@@ -350,7 +350,7 @@ npx @11ty/import webmentions example.com
 
 Import the commit history of files into a `commits` array in the [template data file](https://www.11ty.dev/docs/data-template-dir/) next to each file, whether or not the file was imported.
 
-The route is picked automatically: a local checkout is read with `git log`, which is faster, has no rate limit, and follows renames. Otherwise the GitHub API is used, where an optional `GITHUB_TOKEN` environment variable raises the rate limit from 60 to 5,000 requests per hour. Use `--route=api` or `--route=local` to choose one (`api` on a folder target uses its GitHub `origin` remote).
+The route is picked automatically: a local checkout is read with `git log`, which is faster, has no rate limit, and follows renames. Otherwise the GitHub API is used, where an optional `GITHUB_TOKEN` environment variable raises the rate limit from 60 to 5,000 requests per hour. Use `--route=api` or `--route=local` to choose one (`api` on a folder target uses its GitHub `origin` remote and reads the branch it tracks there, otherwise the default branch).
 
 ```sh
 # Authoring history for one file in this checkout
