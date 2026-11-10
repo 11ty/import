@@ -4730,8 +4730,8 @@ test("Git history local checkout applies .mailmap", async (t) => {
 	let dir = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-mailmap-"));
 	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-	// Isolated from user and system config (no commit signing)
-	let env = { ...process.env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: "1" };
+	// Isolated from user and system config (no commit signing); a missing file reads as empty, os.devNull is unopenable on Windows
+	let env = { ...process.env, GIT_CONFIG_GLOBAL: path.join(dir, "missing.gitconfig"), GIT_CONFIG_NOSYSTEM: "1" };
 	let git = (...args) => execFileSync("git", ["-C", dir, ...args], { env, stdio: "pipe" });
 	git("init", "-q");
 	git("config", "user.name", "Committer");
