@@ -1325,8 +1325,11 @@ test("Per-source assets option treats video posters as images", async (t) => {
 		fetched: ["https://cdn.example.com/clip.mp4"],
 	});
 
-	let sources = `<video><source src="https://cdn.example.com/clip.webm"></video>`;
-	assert.deepEqual(await getResult(["image"], sources), { html: sources, fetched: [] });
+	let sources = `<video><source src="https://cdn.example.com/clip.webm"><track src="https://cdn.example.com/captions.vtt"></video>`;
+	assert.deepEqual(await getResult(["image"], sources), {
+		html: `<video><source src="https://cdn.example.com/clip.webm"><track src="assets/captions.vtt"></video>`,
+		fetched: ["https://cdn.example.com/captions.vtt"],
+	});
 });
 
 test("RSS content looks like HTML", async (t) => {
