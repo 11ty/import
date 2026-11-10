@@ -39,6 +39,7 @@ class Fetcher {
 	#assetsFolder = "assets";
 	#outputFolder = ".";
 	#downloadAssets = true;
+	#assetMaxSize;
 
 	static USER_AGENT = "Eleventy Import v1.0.0";
 	static RETRY_STATUSES = [408, 429, 500, 502, 503, 504];
@@ -194,6 +195,62 @@ class Fetcher {
 
 	setDownloadAssets(download) {
 		this.#downloadAssets = Boolean(download);
+	}
+
+	// Bytes or a size string (e.g. `10MB`, 1024-based), `0` disables it
+	setAssetMaxSize(size) {
+		this.#assetMaxSize = Fetcher.parseSize(size);
+	}
+
+	static parseSize(size) {
+		if(typeof size === "number") {
+			return size;
+		}
+		let match = String(size).trim().match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)?$/i);
+		if(!match) {
+			throw new Error(`Invalid asset size, expected bytes or a size like \`10MB\`. Received: ${size}`);
+		}
+		let units = { b: 0, kb: 1, mb: 2, gb: 3 };
+		return Math.round(Number(match[1]) * 1024 ** units[(match[2] || "b").toLowerCase()]);
+	}
+
+	#isTooLarge(byteLength) {
+		return Boolean(this.#assetMaxSize) && byteLength > this.#assetMaxSize;
+	}
+
+	// `Content-Length` from a HEAD request, if the server sends one
+	async #getContentLength(url) {
+		let wasFetched = this.fetchedUrls.has(url);
+		let hadError = this.errors.has(url);
+		try {
+			let response = await this.fetch(url, {
+				type: "buffer",
+				returnType: "response",
+				retries: 0,
+				fetchOptions: { method: "HEAD" },
+			}, {
+				verbose: false,
+				showErrors: false,
+			});
+			let length = Fetcher.getHeader(response.headers, "content-length");
+			return length ? Number(length) : undefined;
+		} catch(e) {
+			// The download is still attempted (some servers don’t support HEAD)
+			if(!hadError) {
+				this.clearError(url);
+			}
+		} finally {
+			// Keeps the “Fetching” log for the download
+			if(!wasFetched) {
+				this.fetchedUrls.delete(url);
+			}
+		}
+	}
+
+	#logTooLarge(assetUrl, size) {
+		if(this.isVerbose) {
+			Logger.log(kleur.gray("Skipping asset larger than the maximum size"), assetUrl, kleur.gray(`(${size} bytes)`));
+		}
 	}
 
 	setUseRelativeAssetPaths(use) {
@@ -356,6 +413,14 @@ class Fetcher {
 
 		let localAsset = await contextEntry.source?.getLocalAsset(assetUrl);
 
+		if(!localAsset && this.#assetMaxSize) {
+			let contentLength = await this.#getContentLength(assetUrl);
+			if(this.#isTooLarge(contentLength)) {
+				this.#logTooLarge(assetUrl, contentLength);
+				return assetUrl;
+			}
+		}
+
 		// TODO move this upstream as a Fetch `alias` feature.
 		let request = localAsset ? Promise.resolve(localAsset) : this.fetch(assetUrl, {
 			type: "buffer",
@@ -368,6 +433,12 @@ class Fetcher {
 		}).then(result => ({ body: result.body, contentType: result.headers?.["content-type"] }));
 
 		return request.then(result => {
+			// Servers without a `Content-Length` (or with a wrong one)
+			if(this.#isTooLarge(result.body.length)) {
+				this.#logTooLarge(assetUrl, result.body.length);
+				return assetUrl;
+			}
+
 			let { url: urlValue, filePath: fullOutputLocation } = this.getAssetLocation(assetUrl, result.contentType, contextEntry, refType);
 
 			if(this.writtenAssetFiles.has(fullOutputLocation)) {

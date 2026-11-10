@@ -66,6 +66,10 @@ let { positionals, values } = parseArgs({
 		avatarrefs: {
 			type: "string",
 		},
+		assetmaxsize: {
+			type: "string",
+			default: "",
+		},
 		within: {
 			type: "string",
 			default: "",
@@ -98,7 +102,7 @@ let { positionals, values } = parseArgs({
 });
 
 let [ type, target ] = positionals;
-let { quiet, dryrun, output, help, version, overwrite, prune, cacheduration, format, assetrefs, avatarrefs, within, preserve, posttypes, path, limit, until, contentselector } = values;
+let { quiet, dryrun, output, help, version, overwrite, prune, cacheduration, format, assetrefs, avatarrefs, assetmaxsize, within, preserve, posttypes, path, limit, until, contentselector } = values;
 
 if(version) {
 	const require = createRequire(import.meta.url);
@@ -146,6 +150,9 @@ if(help) {
   npx @11ty/import [type] [target] --assetrefs=absolute
   npx @11ty/import [type] [target] --assetrefs=colocate
   npx @11ty/import [type] [target] --assetrefs=disabled
+
+  # Only download assets up to a size (bytes, or KB, MB, GB)
+  npx @11ty/import [type] [target] --assetmaxsize=10MB
 
   # Change avatar reference URLs: absolute (default), relative, colocate, disabled (default when --assetrefs=disabled)
   npx @11ty/import [type] [target] --avatarrefs=relative
@@ -247,6 +254,12 @@ try {
 importer.setDraftsFolder("drafts");
 importer.setAssetsFolder("assets");
 importer.setAssetReferenceType(assetrefs);
+try {
+	importer.setAssetMaxSize(assetmaxsize);
+} catch(e) {
+	console.error(e.message);
+	process.exit(1);
+}
 if(avatarrefs) {
 	importer.setAvatarReferenceType(avatarrefs);
 }

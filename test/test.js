@@ -896,6 +896,47 @@ test("addSource needs to use DataSource", async (t) => {
 	})
 });
 
+test("Fetcher asset maximum size", async (t) => {
+	assert.equal(Fetcher.parseSize(500), 500);
+	assert.equal(Fetcher.parseSize("2KB"), 2048);
+	assert.equal(Fetcher.parseSize("1.5 mb"), 1572864);
+	assert.throws(() => Fetcher.parseSize("big"), /Invalid asset size/);
+
+	let f = new Fetcher();
+	f.setVerbose(false);
+	f.setDryRun(true);
+	f.setAssetMaxSize("1KB");
+
+	let requests = [];
+	let files = {
+		"https://example.com/small.png": { length: 100 },
+		"https://example.com/large.png": { length: 5000, contentLength: 5000 },
+		// No `Content-Length`, only the downloaded body is checked
+		"https://example.com/unknown.png": { length: 5000 },
+	};
+	f.fetch = async (url, opts) => {
+		let method = opts.fetchOptions?.method || "GET";
+		requests.push(`${method} ${url}`);
+		let { length, contentLength } = files[url];
+		return {
+			body: Buffer.alloc(method === "HEAD" ? 0 : length),
+			headers: contentLength ? { "content-length": String(contentLength), "content-type": "image/png" } : { "content-type": "image/png" },
+		};
+	};
+
+	let entry = { url: "https://example.com/post/" };
+	assert.match(await f.fetchAsset("https://example.com/small.png", entry), /^assets\/small-\w+\.png$/);
+	assert.equal(await f.fetchAsset("https://example.com/large.png", entry), "https://example.com/large.png");
+	assert.equal(await f.fetchAsset("https://example.com/unknown.png", entry), "https://example.com/unknown.png");
+	assert.deepEqual(requests, [
+		"HEAD https://example.com/small.png",
+		"GET https://example.com/small.png",
+		"HEAD https://example.com/large.png",
+		"HEAD https://example.com/unknown.png",
+		"GET https://example.com/unknown.png",
+	]);
+});
+
 test("Fetcher asset location tests (relative)", async (t) => {
 	let f = new Fetcher();
 

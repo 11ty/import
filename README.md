@@ -74,6 +74,9 @@ npx @11ty/import [type] [target] --assetrefs=colocate
 # Don’t download any assets
 npx @11ty/import [type] [target] --assetrefs=disabled
 
+# Only download assets up to a size (bytes, or KB, MB, GB)
+npx @11ty/import [type] [target] --assetmaxsize=10MB
+
 # Change avatar reference URLs, same values as --assetrefs (default: absolute, or disabled with --assetrefs=disabled)
 # Avatars are shared across posts, so the default is one root assets folder
 npx @11ty/import [type] [target] --avatarrefs=relative
@@ -397,6 +400,7 @@ importer.setPruneAssets(false); // --prune
 importer.setDraftsFolder("drafts");
 importer.setAssetsFolder("assets");
 importer.setAssetReferenceType("relative"); // --assetrefs
+importer.setAssetMaxSize("10MB"); // --assetmaxsize, larger assets keep their remote URL
 importer.setAvatarReferenceType("absolute"); // --avatarrefs
 
 // Sources (one or more)

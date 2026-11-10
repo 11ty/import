@@ -252,6 +252,12 @@ class Importer {
 		}
 	}
 
+	setAssetMaxSize(size) {
+		if(size !== undefined && size !== "") {
+			this.fetcher.setAssetMaxSize(size);
+		}
+	}
+
 	setFetchRetries(retries) {
 		if(retries !== undefined) {
 			this.fetcher.setFetchRetries(retries);
