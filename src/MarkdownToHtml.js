@@ -231,6 +231,15 @@ class MarkdownToHtml {
 		return false;
 	}
 
+	static isInsideLink(node) {
+		for(let parent = node.parentNode; parent; parent = parent.parentNode) {
+			if(parent.localName === "a") {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	getTurndownService(options = {}) {
 		let { filePath, type, unusedAssets = [] } = options;
 		let isFromWordPress = type === WordPressApi.TYPE;
@@ -258,7 +267,7 @@ class MarkdownToHtml {
 				}
 
 				// content will be empty unless it has a preserved child, e.g. <p><i class="fa-"></i></p>
-				return node.isBlock ? `\n\n${content}\n\n` : content;
+				return node.isBlock && !MarkdownToHtml.isInsideLink(node) ? `\n\n${content}\n\n` : content;
 			},
 
 			// Intentionally opt-out
@@ -266,6 +275,19 @@ class MarkdownToHtml {
 		});
 
 		ts.keep(TAGS_TO_KEEP); // tags run through `keepReplacement` function if match
+
+		// Block children (e.g. Substack’s <a><div><img></div></a>) are rendered inline because blank lines break link syntax
+		// Added first so that later rules (preserved classes, embeds) take precedence
+		// https://github.com/11ty/import/issues/66
+		ts.addRule("inline-blocks-in-links", {
+			filter: (node) => {
+				return node.isBlock && !TAGS_TO_KEEP.includes(node.localName) && MarkdownToHtml.isInsideLink(node);
+			},
+			replacement: (content, node) => {
+				// Space separates adjacent blocks, e.g. <a><div>Title</div><p>Text</p></a>
+				return node.previousSibling ? ` ${content}` : content;
+			}
+		});
 
 		// A markdown code span can only hold literal text, so any code containing markup is kept
 		// as HTML e.g. <code><a href="…">&lt;wa-time-input&gt;</a></code>

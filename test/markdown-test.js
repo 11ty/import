@@ -112,3 +112,11 @@ test("Quotes and HTML in <img alt>", async (t) => {
 
 	assert.equal(await md.toMarkdown(`<img src="/a.png" alt="const myKey = &quot;HI&quot;; <span>{{ myKey }}</span> &amp; [x] a_b">`, sampleEntry), "![const myKey = \"HI\"; \\<span>{{ myKey }}\\</span> & \\[x\\] a\\_b](/a.png)");
 });
+
+test("Linked image with block children stays on one line https://github.com/11ty/import/issues/66", async (t) => {
+	let md = new MarkdownToHtml();
+	await md.asyncInit();
+
+	assert.equal(await md.toMarkdown(`<figure><a class="image-link image2" href="https://example.com/big.png"><div class="image2-inset"><picture><source type="image/webp" srcset="/a-424.webp 424w"><img src="/a.png" alt=""></picture><div class="image-link-expand"><button type="button"><svg role="img"><path d="M1 1"></path></svg></button></div></div></a><figcaption>Caption</figcaption></figure>`, sampleEntry), `[![](/a.png)](https://example.com/big.png)\n\nCaption`);
+	assert.equal(await md.toMarkdown(`<a href="/url" title="Hi"><div>Card</div><p>Text</p></a>`, sampleEntry), `[Card Text](/url "Hi")`);
+});
