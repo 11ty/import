@@ -373,7 +373,7 @@ Differences between the two routes:
 | | local checkout | GitHub API |
 | --- | --- | --- |
 | Renames | followed (`git log --follow`) | not followed, history stops at the last rename |
-| `author` | commit author `name` | GitHub `name` (login), `url`, and `avatarUrl`, falling back to the commit author’s name |
+| `author` | commit author `name`, with `.mailmap` applied | GitHub `name` (login), `url`, and `avatarUrl`, falling back to the commit author’s name (no `.mailmap`) |
 | Commit `url` | from a GitHub `origin` remote, omitted without one | always |
 | Requires | the repository on disk | network, and the repository to be public (or a `GITHUB_TOKEN`) |
 

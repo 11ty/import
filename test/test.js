@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
 
 import { Importer } from "../src/Importer.js";
 import { DataSource } from "../src/DataSource.js";
@@ -4431,6 +4432,33 @@ test("Git history GitHub remotes", async (t) => {
 	assert.equal(GitHistory.getRemoteRepository("git@gitlab.com:11ty/eleventy.git"), undefined);
 	assert.equal(GitHistory.getRemoteRepository("https://example.com/11ty/eleventy"), undefined);
 	assert.equal(GitHistory.getRemoteRepository(""), undefined);
+});
+
+test("Git history local checkout applies .mailmap", async (t) => {
+	let dir = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-mailmap-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+	// Isolated from user and system config (no commit signing)
+	let env = { ...process.env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: "1" };
+	let git = (...args) => execFileSync("git", ["-C", dir, ...args], { env, stdio: "pipe" });
+	git("init", "-q");
+	git("config", "user.name", "Committer");
+	git("config", "user.email", "committer@example.com");
+
+	fs.writeFileSync(path.join(dir, ".mailmap"), "John Doe <john@example.com>\nJohn Doe <john@example.com> jdoe <jdoe@example.com>\n");
+	fs.writeFileSync(path.join(dir, "one.md"), "One");
+	git("add", ".");
+	git("commit", "-q", "-m", "First", "--author", "John Doe <john@example.com>", "--date", "2024-01-01T00:00:00Z");
+	fs.writeFileSync(path.join(dir, "one.md"), "Two");
+	git("commit", "-q", "-am", "Second", "--author", "jdoe <jdoe@example.com>", "--date", "2024-02-01T00:00:00Z");
+
+	let source = new GitHistory(dir);
+	source.setVerbose(false);
+	source.setPaths("one.md");
+
+	let [entry] = await source.getEntries();
+	assert.deepEqual(entry.commits.map(commit => commit.author), [{ name: "John Doe" }, { name: "John Doe" }]);
+	assert.doesNotMatch(JSON.stringify(entry), /@example\.com/);
 });
 
 test("Git history log parsing", async (t) => {

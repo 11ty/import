@@ -182,7 +182,7 @@ export class GitHistory extends DataSource {
 	}
 
 	static getLogFormat() {
-		return ["%H", "%an", "%aI", "%s"].join(GitHistory.FIELD_SEPARATOR) + GitHistory.RECORD_SEPARATOR;
+		return ["%H", "%aN", "%aI", "%s"].join(GitHistory.FIELD_SEPARATOR) + GitHistory.RECORD_SEPARATOR;
 	}
 
 	// `git log` records in the GitHub API’s shape, so both routes clean the same way
