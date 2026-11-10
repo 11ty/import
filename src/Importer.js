@@ -373,6 +373,7 @@ class Importer {
 		let limit;
 		let until;
 		let contentSelector;
+		let route;
 
 		if(typeof options === "string") {
 			identifier = options;
@@ -388,6 +389,7 @@ class Importer {
 			limit = options.limit;
 			until = options.until;
 			contentSelector = options.contentSelector;
+			route = options.route;
 		}
 
 		if(alias?.getTarget && identifier) {
@@ -442,6 +444,13 @@ class Importer {
 				throw new Error(`The contentSelector option is not supported by the ${source.constructor.TYPE} source type.`);
 			}
 			source.setContentSelector(contentSelector);
+		}
+
+		if(route) {
+			if(typeof source.setRoute !== "function") {
+				throw new Error(`The route option is not supported by the ${source.constructor.TYPE} source type.`);
+			}
+			source.setRoute(route);
 		}
 
 		// Enabled by default for sources that support comments

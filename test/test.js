@@ -700,6 +700,43 @@ test("WordPress falls back to the paged RSS feed when no API is found", async (t
 	assert.deepEqual(entries[0].metadata, { id: 123, slug: "hello", postType: "post", categories: ["Economics"] });
 });
 
+test("WordPress route option skips discovery", async (t) => {
+	withEnv(t, { WORDPRESSDOTCOM_TOKEN: undefined });
+
+	let getImporter = route => {
+		let importer = new Importer();
+		importer.setVerbose(false);
+		importer.setDryRun(true);
+		importer.setAssetReferenceType("disabled");
+		importer.addSource("wordpress", { url: "https://example.com/", postTypes: "posts", route });
+		// Discovery would pick the site’s own API
+		importer.addDataOverride("wordpress", "https://example.com/wp-json/wp/v2/types/", { post: { rest_base: "posts" } });
+		return importer;
+	};
+
+	let importer = getImporter("wordpressdotcom");
+	let getUrl = pageNumber => `https://public-api.wordpress.com/wp/v2/sites/example.com/posts/?page=${pageNumber}&per_page=100&_embed=author%2Cwp%3Afeaturedmedia%2Cwp%3Aterm`;
+	importer.addDataOverride("wordpress", "https://public-api.wordpress.com/wp/v2/sites/example.com/types/", { post: { rest_base: "posts" } });
+	importer.addDataOverride("wordpress", getUrl(1), [getWordPressDotComPost()]);
+	importer.addDataOverride("wordpress", getUrl(2), []);
+	assert.deepEqual((await importer.getEntries({ contentType: "html" })).map(entry => entry.url), ["https://example.com/2025/06/hello/"]);
+
+	importer = getImporter("rss");
+	importer.addDataOverride("wordpress", "https://example.com/feed?paged=1", { rss: { channel: { item: [{ title: "Hello", link: "https://example.com/hello/", guid: "https://example.com/?p=1", pubDate: "Mon, 01 Jan 2024 12:00:00 +0000" }] } } });
+	importer.addDataOverride("wordpress", "https://example.com/feed?paged=2", { rss: { channel: {} } });
+	assert.deepEqual((await importer.getEntries({ contentType: "html" })).map(entry => entry.url), ["https://example.com/hello/"]);
+
+	// No RSS fallback when a route is chosen
+	importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.addSource("wordpress", { url: "https://example.com/", route: "api" });
+	importer.addDataOverride("wordpress", "https://example.com/feed?paged=1", { rss: { channel: {} } });
+	await assert.rejects(importer.getEntries({ contentType: "html" }), { message: "Could not find a WordPress REST API for https://example.com/" });
+
+	assert.throws(() => new Importer().addSource("wordpress", { url: "https://example.com/", route: "feed" }), /WordPress route must be one of api, wordpressdotcom, rss/);
+});
+
 test("URL fragments get their own file path", async (t) => {
 	let importer = new Importer();
 	importer.setOutputFolder("out");
@@ -4396,6 +4433,41 @@ test("Git history falls back to the API for a different local checkout", async (
 	});
 
 	assert.equal(await source.getRoute(), "api");
+});
+
+test("Git history route option", async (t) => {
+	let checkout = {
+		"rev-parse": "/tmp/eleventy\n",
+		remote: "https://github.com/11ty/eleventy\n",
+	};
+
+	// `api` skips a matching local checkout
+	let source = new GitHistory("11ty/eleventy");
+	source.setRoute("api");
+	stubGit(source, checkout);
+	assert.equal(await source.getRoute(), "api");
+	assert.equal(source.dir, undefined);
+
+	// `api` on a folder target uses its `origin`
+	source = new GitHistory("/tmp/eleventy");
+	source.setRoute("api");
+	stubGit(source, checkout);
+	assert.equal(await source.getRoute(), "api");
+	assert.equal(source.repository, "11ty/eleventy");
+
+	source = new GitHistory("/tmp/elsewhere");
+	source.setRoute("api");
+	stubGit(source, { ...checkout, remote: "git@git.example.com:owner/repo.git\n" });
+	await assert.rejects(source.getRoute(), /api route requires a GitHub `origin` remote/);
+
+	// `local` requires a matching checkout
+	source = new GitHistory("11ty/eleventy");
+	source.setRoute("local");
+	stubGit(source, { ...checkout, remote: "https://github.com/11ty/import\n" });
+	await assert.rejects(source.getRoute(), /local route requires the current folder to be a checkout of 11ty\/eleventy/);
+
+	assert.throws(() => source.setRoute("ssh"), /route must be one of local, api/);
+	assert.throws(() => new Importer().addSource("github", { url: "11ty/eleventy", route: "api" }), /The route option is not supported by the github source type/);
 });
 
 test("Git history requires a local target to be a repository", async (t) => {

@@ -27,6 +27,7 @@ export class WordPressApi extends DataSource {
 	static WORDPRESSDOTCOM_API = "https://public-api.wordpress.com/wp/v2/sites/";
 	static PER_PAGE = 100;
 	static SUPPORTS_COMMENTS = true;
+	static ROUTES = ["api", "wordpressdotcom", "rss"];
 
 	#postTypes = WordPressApi.DEFAULT_POST_TYPES;
 	#restBase = "posts";
@@ -36,10 +37,19 @@ export class WordPressApi extends DataSource {
 	// Paged RSS feed fallback for sites without a reachable REST API (posts only)
 	#feed;
 	#feedRoot;
+	#route;
 
 	constructor(url) {
 		super();
 		this.url = url;
+	}
+
+	// Skips discovery: the site’s own REST API, the WordPress.com API, or the RSS feed
+	setRoute(route) {
+		if(!WordPressApi.ROUTES.includes(route)) {
+			throw new Error(`WordPress route must be one of ${WordPressApi.ROUTES.join(", ")}, received: ${route}`);
+		}
+		this.#route = route;
 	}
 
 	static #getRouteUrl(apiRoot, route, query = "") {
@@ -60,6 +70,13 @@ export class WordPressApi extends DataSource {
 
 		// Also serves WordPress.com sites (custom domains too) and Jetpack-connected sites
 		let wordpressDotCom = { prefix: `${WordPressApi.WORDPRESSDOTCOM_API}${hostname}/`, separator: "?", isWordPressDotCom: true };
+
+		if(this.#route === "api") {
+			return site;
+		}
+		if(this.#route === "wordpressdotcom") {
+			return [wordpressDotCom];
+		}
 
 		// WordPress.com drafts require the WordPress.com API
 		if(process.env.WORDPRESSDOTCOM_TOKEN) {
@@ -196,10 +213,17 @@ export class WordPressApi extends DataSource {
 	}
 
 	async getEntries() {
+		if(this.#route === "rss") {
+			if(!await this.#discoverFeedRoot()) {
+				throw new Error(`Could not find a WordPress RSS feed for ${this.url}`);
+			}
+			return super.getEntries();
+		}
+
 		try {
 			await this.#discoverApiRoot();
 		} catch(e) {
-			if(!await this.#discoverFeedRoot()) {
+			if(this.#route || !await this.#discoverFeedRoot()) {
 				throw e;
 			}
 

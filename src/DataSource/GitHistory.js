@@ -24,9 +24,11 @@ export class GitHistory extends DataSource {
 	// ASCII record and unit separators, so subjects can’t break parsing
 	static RECORD_SEPARATOR = "\x1e";
 	static FIELD_SEPARATOR = "\x1f";
+	static ROUTES = ["local", "api"];
 
 	#paths = [];
 	#route;
+	#requestedRoute;
 	#remoteRepository;
 
 	constructor(target) {
@@ -114,6 +116,14 @@ export class GitHistory extends DataSource {
 		return this.#paths;
 	}
 
+	// Skips automatic route selection
+	setRoute(route) {
+		if(!GitHistory.ROUTES.includes(route)) {
+			throw new Error(`Git history route must be one of ${GitHistory.ROUTES.join(", ")}, received: ${route}`);
+		}
+		this.#requestedRoute = route;
+	}
+
 	getType() {
 		return "json";
 	}
@@ -156,18 +166,30 @@ export class GitHistory extends DataSource {
 				throw new Error(`Git history requires a git repository, ${this.dir} is not one.`);
 			}
 			this.#remoteRepository = await this.getOriginRepository(this.dir);
+			if(this.#requestedRoute === "api") {
+				if(!this.#remoteRepository) {
+					throw new Error(`The api route requires a GitHub \`origin\` remote, ${this.dir} has none.`);
+				}
+				return this.#route = "api";
+			}
 			return this.#route = "local";
 		}
 
 		// A checkout of the same repository in the current folder is cheaper than the API
-		let root = await this.getRepositoryRoot(".");
-		if(root && await this.getOriginRepository(root) === this.repository) {
-			this.dir = root;
-			this.#remoteRepository = this.repository;
-			if(this.isVerbose) {
-				Logger.log(`Reading ${this.repository} git history from the local checkout at ${root}`);
+		if(this.#requestedRoute !== "api") {
+			let root = await this.getRepositoryRoot(".");
+			if(root && await this.getOriginRepository(root) === this.repository) {
+				this.dir = root;
+				this.#remoteRepository = this.repository;
+				if(this.isVerbose) {
+					Logger.log(`Reading ${this.repository} git history from the local checkout at ${root}`);
+				}
+				return this.#route = "local";
 			}
-			return this.#route = "local";
+		}
+
+		if(this.#requestedRoute === "local") {
+			throw new Error(`The local route requires the current folder to be a checkout of ${this.repository}.`);
 		}
 
 		return this.#route = "api";
