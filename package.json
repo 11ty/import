@@ -1,6 +1,6 @@
 {
 	"name": "@11ty/import",
-	"version": "3.0.0-beta.12",
+	"version": "3.0.0-beta.13",
 	"description": "Utility to import content from multiple services (and a CLI, too)",
 	"type": "module",
 	"main": "./src/Importer.js",
@@ -41,7 +41,7 @@
 		"@11ty/gray-matter": "^3.0.0",
 		"@11ty/posthtml-urls": "^2.0.0",
 		"@prettier/sync": "^0.6.1",
-		"@sindresorhus/slugify": "^4.0.0",
+		"@sindresorhus/slugify": "^4.0.1",
 		"@zachleat/turndown": "^7.2.0",
 		"entities": "^9.0.0",
 		"fast-xml-parser": "^5.12.0",
