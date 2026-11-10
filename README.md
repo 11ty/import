@@ -206,7 +206,7 @@ npx @11ty/import bluesky @11ty.dev
 - `hobix` (Hobix blog URL or domain, from the Wayback Machine)
 - `tumblr` (blog name, domain, or URL, public posts and reblogs, requires a `TUMBLR_API_KEY` environment variable, the OAuth consumer key from [registering an app](https://www.tumblr.com/oauth/apps), `--posttypes` filters by `text`, `photo`, `quote`, `link`, `chat`, `audio`, `video`, or `answer`)
 - `twitter` (Twitter/X archive `.zip` file or extracted folder path)
-- `wayback` (site URL or domain, optionally with a path, from the Internet Archive’s Wayback Machine, links to other imported pages point to their files)
+- `wayback` (site URL or domain, optionally with a path, from the Internet Archive’s Wayback Machine, links to other imported pages point to their files, the `contentSelector` source option picks a content element and skips pages without a match)
 - `webmentions` (domain or site URL, data files only, see [Webmentions](#webmentions))
 
 ```sh
@@ -275,9 +275,6 @@ npx @11ty/import wayback example.com --until=2022
 
 # Same, using a Wayback Machine URL
 npx @11ty/import wayback https://web.archive.org/web/2022/https://example.com/
-
-# Use a specific content element (tag, id, and/or class names), pages without a match are skipped
-npx @11ty/import wayback example.com --contentselector=div.entry
 
 # Import posts and pages with comments from a Typepad blog (offline since September 30, 2025) via the Wayback Machine
 npx @11ty/import typepad sethgodin.typepad.com/seths_blog/

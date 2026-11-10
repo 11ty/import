@@ -13,12 +13,6 @@ let { positionals, values } = parseArgs({
 	strict: true,
 	tokens: true,
 	options: {
-		type: {
-			type: "string",
-		},
-		target: {
-			type: "string",
-		},
 		output: {
 			type: "string",
 			default: ".",
@@ -94,15 +88,11 @@ let { positionals, values } = parseArgs({
 			type: "string",
 			default: "",
 		},
-		contentselector: {
-			type: "string",
-			default: "",
-		},
 	},
 });
 
 let [ type, target ] = positionals;
-let { quiet, dryrun, output, help, version, overwrite, prune, cacheduration, format, assetrefs, avatarrefs, assetmaxsize, within, preserve, posttypes, path, limit, until, contentselector } = values;
+let { quiet, dryrun, output, help, version, overwrite, prune, cacheduration, format, assetrefs, avatarrefs, assetmaxsize, within, preserve, posttypes, path, limit, until } = values;
 
 if(version) {
 	const require = createRequire(import.meta.url);
@@ -176,9 +166,6 @@ if(help) {
   # Only entries created on or before a year, date, or timestamp prefix (wayback, typepad, and hobix also limit captures)
   npx @11ty/import [type] [target] --until=2009
 
-  # Content element for archived pages, pages without a match are skipped (wayback, typepad, hobix)
-  npx @11ty/import wayback [target] --contentselector=div.entry
-
   # Import webmention.io webmentions into post data files (requires WEBMENTION_IO_TOKEN)
   npx @11ty/import webmentions example.com
 
@@ -237,13 +224,12 @@ importer.setSafeMode(!overwrite);
 importer.setDryRun(dryrun);
 importer.setPruneAssets(prune);
 try {
-	importer.addSource(type, posttypes || path || limit || until || contentselector ? {
+	importer.addSource(type, posttypes || path || limit || until ? {
 		url: target,
 		postTypes: posttypes || undefined,
 		path: path || undefined,
 		limit: limit || undefined,
 		until: until || undefined,
-		contentSelector: contentselector || undefined,
 	} : target);
 } catch(e) {
 	console.error(e.message);
