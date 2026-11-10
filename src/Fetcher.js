@@ -411,13 +411,17 @@ class Fetcher {
 			}
 		}
 
+		// Failures return the URL as referenced, not the mapped one
+		let referencedUrl = assetUrl;
+		assetUrl = contextEntry?.source?.getAssetUrl?.(assetUrl) ?? assetUrl;
+
 		let localAsset = await contextEntry.source?.getLocalAsset(assetUrl);
 
 		if(!localAsset && this.#assetMaxSize) {
 			let contentLength = await this.#getContentLength(assetUrl);
 			if(this.#isTooLarge(contentLength)) {
 				this.#logTooLarge(assetUrl, contentLength);
-				return assetUrl;
+				return referencedUrl;
 			}
 		}
 
@@ -436,7 +440,7 @@ class Fetcher {
 			// Servers without a `Content-Length` (or with a wrong one)
 			if(this.#isTooLarge(result.body.length)) {
 				this.#logTooLarge(assetUrl, result.body.length);
-				return assetUrl;
+				return referencedUrl;
 			}
 
 			let { url: urlValue, filePath: fullOutputLocation } = this.getAssetLocation(assetUrl, result.contentType, contextEntry, refType);
@@ -476,7 +480,7 @@ class Fetcher {
 		}, error => {
 			// Error logging happens in .fetch() upstream
 			// Fetching the asset failed but we don’t want to fail the upstream document promise
-			return assetUrl;
+			return referencedUrl;
 		});
 	}
 

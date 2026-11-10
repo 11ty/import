@@ -559,6 +559,11 @@ class DataSource {
 	// Asset contents from a local export (e.g. a `.zip` file) instead of fetching the URL: `{ body, contentType }`
 	async getLocalAsset(url) {}
 
+	// Original URL for a CDN or proxy asset URL, so copies of one asset share a file
+	getAssetUrl(url) {
+		return url;
+	}
+
 	// Linked files (not just embedded assets) to download, receives a URL object
 	isLinkedAsset(url) {
 		return false;

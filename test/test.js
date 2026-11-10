@@ -13,6 +13,7 @@ import { HtmlTransformer } from "../src/HtmlTransformer.js";
 import { MarkdownToHtml } from "../src/MarkdownToHtml.js";
 import { WordPressApi } from "../src/DataSource/WordPressApi.js";
 import { Squarespace } from "../src/DataSource/Squarespace.js";
+import { Substack } from "../src/DataSource/Substack.js";
 import { Rss } from "../src/DataSource/Rss.js";
 import { BlueskyUser } from "../src/DataSource/BlueskyUser.js";
 import { FediverseUser } from "../src/DataSource/FediverseUser.js";
@@ -2722,6 +2723,38 @@ test("Substack", async (t) => {
 	assert.equal(paid.metadata.postType, "podcast");
 	assert.equal(paid.content, "Preview");
 	assert.equal(paid.comments, undefined);
+});
+
+test("Substack image proxy links download the original image https://github.com/11ty/import/issues/66", async (t) => {
+	let source = new Substack("example");
+	let original = "https://substack-post-media.s3.amazonaws.com/public/images/a_2048x1365.png";
+	let proxied = `https://substackcdn.com/image/fetch/$s_!Ix0x!,f_auto,q_auto:good/${encodeURIComponent(original)}`;
+
+	assert.equal(source.getAssetUrl(proxied), original);
+	assert.equal(source.getAssetUrl(original), original);
+	// Other proxied hosts are left as is
+	let external = `https://substackcdn.com/image/fetch/f_auto/${encodeURIComponent("https://example.com/a.png")}`;
+	assert.equal(source.getAssetUrl(external), external);
+
+	assert.equal(source.isLinkedAsset(new URL(proxied)), true);
+	assert.equal(source.isLinkedAsset(new URL(original)), true);
+	assert.equal(source.isLinkedAsset(new URL(external)), false);
+	assert.equal(source.isLinkedAsset(new URL("https://example.com/a.png")), false);
+
+	let f = new Fetcher();
+	f.setVerbose(false);
+	f.setDryRun(true);
+	let requests = [];
+	f.fetch = async (url) => {
+		requests.push(url);
+		return { body: Buffer.alloc(1), headers: { "content-type": "image/png" } };
+	};
+
+	let entry = { url: "https://example.substack.com/p/first", source };
+	let fromImage = await f.fetchAsset(original, entry);
+	assert.match(fromImage, /^assets\/.*\.png$/);
+	assert.equal(await f.fetchAsset(proxied, entry), fromImage);
+	assert.deepEqual(requests, [original, original]);
 });
 
 test("Ghost", async (t) => {

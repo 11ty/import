@@ -22,6 +22,30 @@ export class Substack extends DataSource {
 		return "json";
 	}
 
+	// Images in posts point to this host or the substackcdn.com image proxy
+	static ASSET_HOST = "substack-post-media.s3.amazonaws.com";
+
+	isLinkedAsset(url) {
+		return url.hostname === Substack.ASSET_HOST || this.#getProxiedUrl(url) !== undefined;
+	}
+
+	// e.g. https://substackcdn.com/image/fetch/$s_!Ix0x!,f_auto/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2F…
+	#getProxiedUrl(url) {
+		if(url.hostname !== "substackcdn.com" || !url.pathname.startsWith("/image/fetch/")) {
+			return;
+		}
+
+		let original = URL.parse(decodeURIComponent(url.pathname.split("/").pop()));
+		if(original?.hostname === Substack.ASSET_HOST) {
+			return original.toString();
+		}
+	}
+
+	getAssetUrl(url) {
+		let parsed = URL.parse(url);
+		return parsed && this.#getProxiedUrl(parsed) || url;
+	}
+
 	getSiteUrl() {
 		return new URL(this.url).origin;
 	}
