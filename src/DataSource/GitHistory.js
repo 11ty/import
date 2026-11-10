@@ -18,6 +18,8 @@ export class GitHistory extends DataSource {
 	static DECODE_HTML = false;
 	// Writes data files only (always rewritten), never posts
 	static DATA_ONLY = true;
+	// Downloads commit author avatars (api route only, `git log` has none)
+	static COMMENT_AVATARS = true;
 	static PER_PAGE = 100;
 	// A long history can be a few megabytes of `git log` output
 	static MAX_BUFFER = 1024 * 1024 * 64;

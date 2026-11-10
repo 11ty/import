@@ -4304,6 +4304,17 @@ test("Git history", async (t) => {
 	assert.equal(importer.getCounts().errors, 0);
 });
 
+test("Git history avatars are downloaded", async (t) => {
+	let importer = getGitHistoryImporter("11ty/eleventy", "README.md", {
+		"README.md": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
+	});
+	importer.setAssetReferenceType("relative");
+	importer.fetcher.fetchAsset = async (url, entry, refType) => `/${refType}/${new URL(url).pathname.split("/").pop()}`;
+
+	let [entry] = await importer.getEntries();
+	assert.equal(entry.commits[0].author.avatarUrl, "/absolute/zachleat.png");
+});
+
 test("Git history writes a data file next to the post, no post", async (t) => {
 	let dir = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-git-"));
 	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
