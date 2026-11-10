@@ -5,7 +5,6 @@ import urlsDefaults from "@11ty/posthtml-urls/lib/defaultOptions.js";
 import * as entities from "entities";
 
 const ASSET_TAGS = ["img", "video", "audio", "source", "link", "script", "track"];
-// Media type of an element, `<source>` and `<track>` use their parent’s
 const MEDIA_TAGS = {
 	img: "image",
 	picture: "image",
@@ -116,32 +115,45 @@ class HtmlTransformer {
 		return siteRelativeUrl;
 	}
 
-	// Elements (and their descendants) of media types the source doesn’t download
-	static getSkippedNodes(tree, source) {
-		let nodes = new WeakSet();
-		let add = node => {
-			if(node && typeof node === "object") {
-				nodes.add(node);
-				for(let child of node.content || []) {
-					add(child);
+	// Media type of each element’s nearest media element (itself or an ancestor), e.g. `<source>` in `<video>`
+	static getMediaTypes(tree) {
+		let types = new WeakMap();
+		let walk = (nodes, type) => {
+			for(let node of nodes || []) {
+				if(node && typeof node === "object") {
+					let nodeType = MEDIA_TAGS[node.tag] ?? type;
+					types.set(node, nodeType);
+					walk(node.content, nodeType);
 				}
 			}
-			return node;
 		};
-		let tags = Object.keys(MEDIA_TAGS).filter(tag => source.shouldDownloadAssets(MEDIA_TAGS[tag]) === false);
-		if(tags.length) {
-			tree.match(tags.map(tag => ({ tag })), add);
-		}
-		return nodes;
+		walk(tree);
+		return types;
 	}
 
-	// Default posthtml-urls filter minus skipped nodes, `eachURL` only receives the tag name
-	static getUrlsFilter(skippedNodes) {
+	// `<track>` and non-media tags (e.g. `<link>`) have no media type
+	static getMediaType(node, attrName, mediaTypes) {
+		if(node.tag === "video" && attrName === "poster") {
+			return "image";
+		}
+		if(node.tag === "source" || MEDIA_TAGS[node.tag]) {
+			return mediaTypes.get(node);
+		}
+	}
+
+	// Default posthtml-urls filter minus attributes of media types the source doesn’t download, `eachURL` only receives the tag name
+	static getUrlsFilter(tree, source) {
+		let mediaTypes = this.getMediaTypes(tree);
+		let isSkipped = (node, attrName) => {
+			let mediaType = this.getMediaType(node, attrName, mediaTypes);
+			return mediaType !== undefined && source.shouldDownloadAssets(mediaType) === false;
+		};
+
 		return Object.fromEntries(Object.entries(urlsDefaults.filter).map(([tag, attrs]) => [
 			tag,
 			Object.fromEntries(Object.entries(attrs).map(([attr, accept]) => [
 				attr,
-				(node, attrName) => !skippedNodes.has(node) && (typeof accept === "function" ? accept(node, attrName) : accept),
+				(node, attrName) => !isSkipped(node, attrName) && (typeof accept === "function" ? accept(node, attrName) : accept),
 			])),
 		]));
 	}
@@ -170,7 +182,7 @@ class HtmlTransformer {
 		let result = await posthtml()
 			.use(tree => {
 				if(entry.source?.shouldDownloadAssets) {
-					options.filter = HtmlTransformer.getUrlsFilter(HtmlTransformer.getSkippedNodes(tree, entry.source));
+					options.filter = HtmlTransformer.getUrlsFilter(tree, entry.source);
 				}
 				return urls(options)(tree);
 			})

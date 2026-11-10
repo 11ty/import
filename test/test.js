@@ -1304,6 +1304,31 @@ test("Per-source assets media types in content", async (t) => {
 	]);
 });
 
+test("Per-source assets option treats video posters as images", async (t) => {
+	let getResult = async (assets, content) => {
+		let { transformer, fetched } = getLinkTransformer();
+		let source = new Rss("https://example.com/feed.xml");
+		source.setAssets(assets);
+		let html = await transformer.transform(content, { url: "https://example.com/post/", source });
+		return { html, fetched };
+	};
+
+	let video = `<video poster="https://cdn.example.com/poster.jpg" src="https://cdn.example.com/clip.mp4"></video>`;
+
+	assert.deepEqual(await getResult(["image"], video), {
+		html: `<video poster="assets/poster.jpg" src="https://cdn.example.com/clip.mp4"></video>`,
+		fetched: ["https://cdn.example.com/poster.jpg"],
+	});
+
+	assert.deepEqual(await getResult(["video"], video), {
+		html: `<video poster="https://cdn.example.com/poster.jpg" src="assets/clip.mp4"></video>`,
+		fetched: ["https://cdn.example.com/clip.mp4"],
+	});
+
+	let sources = `<video><source src="https://cdn.example.com/clip.webm"></video>`;
+	assert.deepEqual(await getResult(["image"], sources), { html: sources, fetched: [] });
+});
+
 test("RSS content looks like HTML", async (t) => {
 	assert.equal(Rss.looksLikeHtml("<p>Hello</p>"), true);
 	assert.equal(Rss.looksLikeHtml("&lt;p&gt;Hello&lt;/p&gt;"), true);
