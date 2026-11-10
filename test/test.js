@@ -4329,6 +4329,72 @@ test("Git history writes a data file next to the post, no post", async (t) => {
 	assert.deepEqual(data.commits.map(({ id, via }) => [id, via]), [["aaa", "git"]]);
 });
 
+test("Git history keeps the newest commits", async (t) => {
+	let commits = [
+		gitCommit("ccc", "2024-03-01T00:00:00Z", "Three"),
+		gitCommit("bbb", "2024-02-01T00:00:00Z", "Two"),
+	];
+
+	// Only one page of the limit is requested
+	let importer = new Importer();
+	importer.setVerbose(false);
+	importer.setDryRun(true);
+	importer.setAssetReferenceType("disabled");
+	importer.addSource("git", { url: "11ty/eleventy", path: "README.md", commits: 2 });
+	let [source] = importer.getSources();
+	stubGit(source);
+	source.setDataOverride("https://api.github.com/repos/11ty/eleventy/commits?path=README.md&per_page=2&page=1", commits);
+
+	let [entry] = await importer.getEntries();
+	assert.deepEqual(entry.commits.map(commit => commit.id), ["bbb", "ccc"]);
+
+	// `0` keeps the full history
+	source = new GitHistory("11ty/eleventy");
+	source.setCommitLimit(0);
+	assert.equal(source.getCommitLimit(), Infinity);
+	assert.match(source.getCommitsUrl("README.md"), /per_page=100/);
+
+	// `until` fetches the full history, then keeps the newest before it
+	source = new GitHistory("11ty/eleventy");
+	source.setCommitLimit(1);
+	source.setUntil("2024-02");
+	assert.match(source.getCommitsUrl("README.md"), /per_page=100/);
+	assert.deepEqual(source.cleanEntry({ path: "README.md", commits: [...commits, gitCommit("aaa", "2024-01-01T00:00:00Z", "One")] }).commits.map(commit => commit.id), ["bbb"]);
+
+	assert.equal(new GitHistory("11ty/eleventy").getCommitLimit(), 10);
+	assert.throws(() => source.setCommitLimit("all"), /commits option must be a number/);
+	assert.throws(() => new Importer().addSource("github", { url: "11ty/eleventy", commits: 5 }), /The commits option is not supported by the github source type/);
+});
+
+test("Git history appends unique authors to the data file", async (t) => {
+	let dir = fs.mkdtempSync(path.join(os.tmpdir(), "eleventy-import-git-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+	let first = getGitHistoryImporter("11ty/eleventy", "one.md", {
+		"one.md": [
+			gitCommit("bbb", "2024-02-01T00:00:00Z", "Two", { login: "jane" }),
+			gitCommit("aaa", "2024-01-01T00:00:00Z", "One"),
+		],
+	}, dir);
+	let [entry] = await first.getEntries();
+	// Oldest first, one per author
+	assert.deepEqual(entry.authors.map(author => author.name), ["zachleat", "jane"]);
+	await first.toFiles([entry]);
+
+	let second = getGitHistoryImporter("11ty/eleventy", "one.md", {
+		"one.md": [
+			gitCommit("ccc", "2024-03-01T00:00:00Z", "Three", { login: "sam" }),
+			gitCommit("bbb", "2024-02-01T00:00:00Z", "Two", { login: "jane" }),
+		],
+	}, dir);
+	await second.toFiles(await second.getEntries());
+
+	let data = JSON.parse(fs.readFileSync(path.join(dir, "one.json"), "utf8"));
+	// Commits are replaced, authors are kept
+	assert.deepEqual(data.commits.map(commit => commit.id), ["bbb", "ccc"]);
+	assert.deepEqual(data.authors.map(author => author.name), ["zachleat", "jane", "sam"]);
+});
+
 test("Git history folder paths list the repository tree", async (t) => {
 	let importer = getGitHistoryImporter("11ty/eleventy", "src/posts/,README.md", {
 		"https://api.github.com/repos/11ty/eleventy/git/trees/HEAD?recursive=1": {
@@ -4385,7 +4451,7 @@ test("Git history reads a local checkout", async (t) => {
 		{ id: "bbb", url: "https://github.com/11ty/eleventy/commit/bbb", author: { name: "Zach Leatherman" }, date: new Date("2024-02-01T06:00:00Z"), message: "Rename and edit" },
 	]);
 	// Renames are followed
-	assert.deepEqual(source.gitCalls.at(-1), ["log", "--follow", `--format=${GitHistory.getLogFormat()}`, "--", "src/posts/one.md"]);
+	assert.deepEqual(source.gitCalls.at(-1), ["log", "--follow", "--max-count=10", `--format=${GitHistory.getLogFormat()}`, "--", "src/posts/one.md"]);
 });
 
 test("Git history local checkout links a folder target in a subfolder", async (t) => {
@@ -4536,7 +4602,7 @@ test("Git history api route on a folder target in a subfolder", async (t) => {
 	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 	let importer = getGitHistorySubfolderImporter("content/index.md", {
-		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Findex.md&per_page=100&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
+		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Findex.md&per_page=10&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
 	}, { outputFolder: dir });
 
 	let entries = await importer.getEntries();
@@ -4557,7 +4623,7 @@ test("Git history api route folder paths in a subfolder", async (t) => {
 				{ path: "docs/other.md", type: "blob" },
 			],
 		},
-		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Fone.md&per_page=100&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "One")],
+		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Fone.md&per_page=10&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "One")],
 	});
 
 	let entries = await importer.getEntries();
@@ -4566,7 +4632,7 @@ test("Git history api route folder paths in a subfolder", async (t) => {
 
 test("Git history api route on a folder target at the repository root", async (t) => {
 	let importer = getGitHistorySubfolderImporter("content/index.md", {
-		"https://api.github.com/repos/11ty/starters/commits?path=content%2Findex.md&per_page=100&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
+		"https://api.github.com/repos/11ty/starters/commits?path=content%2Findex.md&per_page=10&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
 	}, { prefix: "" });
 
 	let [entry] = await importer.getEntries();
@@ -4579,7 +4645,7 @@ test("Git history api route on a folder target reads its upstream branch", async
 		"https://api.github.com/repos/11ty/starters/git/trees/lm%2Fdocs-starter?recursive=1": {
 			tree: [{ path: "docs/content/index.md", type: "blob" }],
 		},
-		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Findex.md&sha=lm%2Fdocs-starter&per_page=100&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
+		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Findex.md&sha=lm%2Fdocs-starter&per_page=10&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
 	}, { upstream: "origin/lm/docs-starter" });
 
 	let [entry] = await importer.getEntries();
@@ -4591,7 +4657,7 @@ test("Git history api route ignores an upstream on another remote", async (t) =>
 		"https://api.github.com/repos/11ty/starters/git/trees/HEAD?recursive=1": {
 			tree: [{ path: "docs/content/index.md", type: "blob" }],
 		},
-		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Findex.md&per_page=100&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
+		"https://api.github.com/repos/11ty/starters/commits?path=docs%2Fcontent%2Findex.md&per_page=10&page=1": [gitCommit("aaa", "2024-01-01T00:00:00Z", "First commit")],
 	}, { upstream: "fork/lm/docs-starter" });
 
 	let [entry] = await importer.getEntries();

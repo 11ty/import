@@ -21,6 +21,8 @@ export class GitHistory extends DataSource {
 	// Downloads commit author avatars (api route only, `git log` has none)
 	static COMMENT_AVATARS = true;
 	static PER_PAGE = 100;
+	// Newest commits kept per file
+	static COMMIT_LIMIT = 10;
 	// A long history can be a few megabytes of `git log` output
 	static MAX_BUFFER = 1024 * 1024 * 64;
 	// ASCII record and unit separators, so subjects can’t break parsing
@@ -29,6 +31,7 @@ export class GitHistory extends DataSource {
 	static ROUTES = ["local", "api"];
 
 	#paths = [];
+	#commitLimit = GitHistory.COMMIT_LIMIT;
 	#route;
 	#requestedRoute;
 	#remoteRepository;
@@ -120,6 +123,28 @@ export class GitHistory extends DataSource {
 
 	getPaths() {
 		return this.#paths;
+	}
+
+	// Newest commits kept per file, `0` or `false` keeps the full history
+	setCommitLimit(limit) {
+		let count = Number(limit);
+		if(!Number.isInteger(count) || count < 0) {
+			throw new Error(`Git history commits option must be a number of commits (or 0 for all), received: ${limit}`);
+		}
+		this.#commitLimit = count || Infinity;
+	}
+
+	getCommitLimit() {
+		return this.#commitLimit;
+	}
+
+	// `until` filters after fetching, so it needs the full history
+	#getFetchLimit() {
+		return this.getUntil() ? Infinity : this.#commitLimit;
+	}
+
+	#getPerPage() {
+		return Math.min(GitHistory.PER_PAGE, this.#getFetchLimit());
 	}
 
 	// Skips automatic route selection
@@ -235,7 +260,7 @@ export class GitHistory extends DataSource {
 		if(this.#branch) {
 			url.searchParams.set("sha", this.#branch);
 		}
-		url.searchParams.set("per_page", GitHistory.PER_PAGE);
+		url.searchParams.set("per_page", this.#getPerPage());
 		url.searchParams.set("page", pageNumber);
 		return url.toString();
 	}
@@ -278,7 +303,9 @@ export class GitHistory extends DataSource {
 
 	// `--follow` continues the history through renames (one path at a time only)
 	async #getLocalCommits(filePath) {
-		return GitHistory.parseLog(await this.runGit(["log", "--follow", `--format=${GitHistory.getLogFormat()}`, "--", filePath]));
+		let limit = this.#getFetchLimit();
+		let count = Number.isFinite(limit) ? [`--max-count=${limit}`] : [];
+		return GitHistory.parseLog(await this.runGit(["log", "--follow", ...count, `--format=${GitHistory.getLogFormat()}`, "--", filePath]));
 	}
 
 	async #getApiCommits(filePath) {
@@ -291,7 +318,7 @@ export class GitHistory extends DataSource {
 
 			commits.push(...results);
 
-			if(results.length < GitHistory.PER_PAGE) {
+			if(results.length < this.#getPerPage() || commits.length >= this.#getFetchLimit()) {
 				break;
 			}
 		}
@@ -362,9 +389,17 @@ export class GitHistory extends DataSource {
 
 	cleanEntry({ path: filePath, commits }) {
 		// `until` limits the history to the commits at that point in time
-		let cleaned = commits.map(commit => this.cleanCommit(commit)).filter(commit => !this.isAfterUntil(commit.date)).sort((a, b) => a.date - b.date);
+		let cleaned = commits.map(commit => this.cleanCommit(commit)).filter(commit => !this.isAfterUntil(commit.date)).sort((a, b) => a.date - b.date).slice(-this.#commitLimit);
 		if(!cleaned.length) {
 			return;
+		}
+
+		// The importer appends these to the data file’s `authors` (never removed), oldest first
+		let authors = new Map();
+		for(let { author } of cleaned) {
+			if(author) {
+				authors.set(author.url || author.name, author);
+			}
 		}
 
 		let entry = {
@@ -375,6 +410,7 @@ export class GitHistory extends DataSource {
 			date: cleaned.at(-1).date,
 			content: "",
 			commits: cleaned,
+			authors: Array.from(authors.values()),
 		};
 
 		if(this.repository) {

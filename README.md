@@ -371,6 +371,8 @@ npx @11ty/import git . --path=src/docs/
 
 - Each commit has `id` (the full SHA), `url`, `author`, `date`, `message` (the subject line only), and `via`. Author emails are not imported.
 - Data files go where the file lives in the repository: `--path=src/posts/one.md` writes `src/posts/one.json` (under `--output`). Paths are relative to the folder you target (on both routes), or to the repository root for an `owner/repo` target.
+- Only the 10 newest commits are kept per file. Use the `commits` source option to change this (`0` keeps the full history), e.g. `importer.addSource("git", { url: ".", path: "README.md", commits: 25 })`.
+- An `authors` array lists each commit author once. New authors are appended on every import and are never removed, so it keeps authors whose commits have dropped out of `commits`.
 - The history is always rewritten (no `--overwrite` needed), so commits that are no longer reachable are removed. If one file fails, its data file is left alone and the other files merge instead of replacing.
 - `--until` limits the history to the commits at that point in time.
 

@@ -374,6 +374,7 @@ class Importer {
 		let until;
 		let contentSelector;
 		let route;
+		let commits;
 
 		if(typeof options === "string") {
 			identifier = options;
@@ -390,6 +391,7 @@ class Importer {
 			until = options.until;
 			contentSelector = options.contentSelector;
 			route = options.route;
+			commits = options.commits;
 		}
 
 		if(alias?.getTarget && identifier) {
@@ -451,6 +453,13 @@ class Importer {
 				throw new Error(`The route option is not supported by the ${source.constructor.TYPE} source type.`);
 			}
 			source.setRoute(route);
+		}
+
+		if(commits !== undefined) {
+			if(typeof source.setCommitLimit !== "function") {
+				throw new Error(`The commits option is not supported by the ${source.constructor.TYPE} source type.`);
+			}
+			source.setCommitLimit(commits);
 		}
 
 		// Enabled by default for sources that support comments
@@ -991,6 +1000,16 @@ class Importer {
 			} else {
 				delete data[key];
 			}
+		}
+
+		// Unique authors are appended (existing ones refreshed in place), never removed
+		if(isDataOnly && entry.authors?.length) {
+			let getKey = author => author?.url || author?.name;
+			let authors = new Map((Array.isArray(existingData.authors) ? existingData.authors : []).map(author => [getKey(author), author]));
+			for(let author of entry.authors) {
+				authors.set(getKey(author), author);
+			}
+			data.authors = Array.from(authors.values());
 		}
 
 		// Counts belong to the post source and are always replaced
