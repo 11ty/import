@@ -1,5 +1,5 @@
 import path from "node:path";
-import posthtml from "posthtml";
+import posthtml from "@11ty/posthtml";
 import urls from "@11ty/posthtml-urls";
 import urlsDefaults from "@11ty/posthtml-urls/lib/defaultOptions.js";
 import * as entities from "entities";

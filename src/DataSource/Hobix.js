@@ -1,4 +1,4 @@
-import posthtml from "posthtml";
+import posthtml from "@11ty/posthtml";
 
 import { DataSource } from "../DataSource.js";
 import { WaybackMachine } from "./WaybackMachine.js";

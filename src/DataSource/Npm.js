@@ -1,5 +1,5 @@
 import MarkdownIt from "markdown-it";
-import posthtml from "posthtml";
+import posthtml from "@11ty/posthtml";
 import urls from "@11ty/posthtml-urls";
 
 import { DataSource } from "../DataSource.js";
